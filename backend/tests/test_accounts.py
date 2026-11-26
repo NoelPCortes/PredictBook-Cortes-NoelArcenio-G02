@@ -168,10 +168,12 @@ def test_signup_returns_default_password_validation_messages(client, password):
 
 
 @pytest.mark.parametrize("field", ["username", "email"])
-def test_signup_rejects_duplicate_identity(client, make_user, field):
+@pytest.mark.parametrize("case_variant", [False, True])
+def test_signup_rejects_duplicate_identity(client, make_user, field, case_variant):
     existing = make_user("existing")
+    value = getattr(existing, field)
     response = post(
-        client, "signup", **signup_fields(**{field: getattr(existing, field)})
+        client, "signup", **signup_fields(**{field: value.upper() if case_variant else value})
     )
     assert response.status_code == 400
     assert field in response.data
@@ -282,13 +284,16 @@ def test_profile_rejects_protected_fields(client, make_user, field, value):
 
 
 @pytest.mark.parametrize("field", ["username", "email"])
-def test_profile_rejects_duplicate_identity(client, make_user, field):
+@pytest.mark.parametrize("case_variant", [False, True])
+def test_profile_rejects_duplicate_identity(client, make_user, field, case_variant):
     authorize(client, make_user("traveler"))
     other = make_user("other")
+    value = getattr(other, field)
     response = client.patch(
-        "/api/accounts/profile/", {field: getattr(other, field)}, format="json"
+        "/api/accounts/profile/", {field: value.upper() if case_variant else value}, format="json"
     )
     assert response.status_code == 400
+    assert field in response.data
 
 
 def test_password_change_requires_current_password_and_default_validators(

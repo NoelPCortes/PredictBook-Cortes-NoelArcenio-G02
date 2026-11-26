@@ -102,6 +102,14 @@ class ForecastPermissionsTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("data_source", response.data)
 
+    def test_forecast_rejects_crowd_score_out_of_range(self):
+        self.client.force_authenticate(self.staff)
+        for score in (-1.5, 100.1, "NaN", "Infinity"):
+            with self.subTest(score=score):
+                response = self.client.patch(self.url, {"crowd_score": score})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.data["crowd_score"], ["Enter a score from 0 to 100."])
+
     def test_calculated_forecast_cannot_be_deleted_by_head(self):
         self.mark_calculated()
         self.client.force_authenticate(self.head)

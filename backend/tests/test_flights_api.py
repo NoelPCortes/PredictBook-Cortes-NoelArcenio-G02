@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -12,6 +12,12 @@ from flights.models import Airline, Airport, Flight
 
 pytestmark = pytest.mark.django_db
 BASE = "/api/flights/"
+NOW = datetime(2026, 11, 1, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def freeze_flight_validation_clock(monkeypatch):
+    monkeypatch.setattr("flights.serializers.now", lambda: NOW)
 
 
 @pytest.fixture
@@ -172,9 +178,15 @@ def test_patch_checks_existing_seats_when_total_changes(users, flight):
     assert "available_seats" in response.json()
 
 
-def test_zero_seats_past_dates_and_same_record_update_are_allowed(users, flight, payload):
+def test_zero_available_seats_on_an_existing_past_flight_are_allowed(users, flight, payload):
+    flight.departure_time = NOW - timedelta(days=1)
+    flight.arrival_time = flight.departure_time + timedelta(hours=1)
+    flight.save()
     client = client_for(users["staff"])
-    response = client.patch(f"{BASE}{flight.pk}/", {**payload, "total_seats": 0, "available_seats": 0}, format="json")
+    response = client.patch(f"{BASE}{flight.pk}/", {
+        **payload, "departure_time": flight.departure_time.isoformat(),
+        "arrival_time": flight.arrival_time.isoformat(), "available_seats": 0,
+    }, format="json")
     assert response.status_code == 200
 
 

@@ -1,5 +1,14 @@
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
+
+FLIGHT_NUMBER_ERROR = "Use 2 to 10 letters or digits."
+FLIGHT_NUMBER_VALIDATOR = RegexValidator(r"\A[A-Z0-9]{2,10}\Z", FLIGHT_NUMBER_ERROR)
+TOTAL_SEATS_ERROR = "Enter a number from 1 to 1000."
+TOTAL_SEATS_VALIDATORS = (
+    MinValueValidator(1, TOTAL_SEATS_ERROR),
+    MaxValueValidator(1000, TOTAL_SEATS_ERROR),
+)
 
 
 class Airport(models.Model):

@@ -1,5 +1,13 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+
+CROWD_SCORE_ERROR = "Enter a score from 0 to 100."
+
+
+def validate_crowd_score(value):
+    if not 0 <= value <= 100:
+        raise ValidationError(CROWD_SCORE_ERROR)
 
 
 class CrowdForecast(models.Model):

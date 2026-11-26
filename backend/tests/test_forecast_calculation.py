@@ -171,7 +171,8 @@ def client_for(user):
     return client
 
 
-def test_api_flight_create_update_and_delete_recalculates_old_and_new_pairs(scenario):
+def test_api_flight_create_update_and_delete_recalculates_old_and_new_pairs(scenario, monkeypatch):
+    monkeypatch.setattr("flights.serializers.now", lambda: datetime(2026, 11, 1, tzinfo=UTC))
     staff, airports, airline = scenario
     client = client_for(staff)
     response = client.post(
