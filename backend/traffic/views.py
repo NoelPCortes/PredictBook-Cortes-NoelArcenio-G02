@@ -11,18 +11,18 @@ from flights.models import Airport
 from .calculation import CALCULATED_SOURCES, SAMPLE_SOURCE, flight_totals
 from .insights import date_explanation, date_recommendations
 from .models import CrowdForecast
-from .permissions import CanManageManualForecasts
+from .permissions import CanManageForecasts
 from .serializers import (
     DateInsightFilterSerializer,
     ForecastFilterSerializer,
     ForecastSerializer,
     RecommendationFilterSerializer,
 )
-from .services import save_forecast
+from .services import delete_forecast, save_forecast
 
 
 class ForecastListCreateView(generics.ListCreateAPIView):
-    permission_classes = (IsAuthenticated, CanManageManualForecasts)
+    permission_classes = (IsAuthenticated, CanManageForecasts)
     serializer_class = ForecastSerializer
 
     def get_queryset(self):
@@ -69,13 +69,16 @@ class ForecastListCreateView(generics.ListCreateAPIView):
 
 
 class ForecastDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = (IsAuthenticated, CanManageManualForecasts)
+    permission_classes = (IsAuthenticated, CanManageForecasts)
     serializer_class = ForecastSerializer
     queryset = CrowdForecast.objects.select_related("airport", "created_by")
     http_method_names = ("get", "patch", "delete", "head", "options")
 
     def perform_update(self, serializer):
         save_forecast(serializer)
+
+    def perform_destroy(self, instance):
+        delete_forecast(instance, self.request.user)
 
 
 class DateExplanationView(APIView):
