@@ -1,6 +1,6 @@
 from django.db import IntegrityError, transaction
-from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import get_object_or_404
 
 from traffic.calculation import flight_pairs, recalculate_forecasts
 
@@ -34,6 +34,10 @@ def save_flight(serializer, **kwargs):
                 )
                 old_pairs = flight_pairs(serializer.instance)
             fields = serializer.validated_data
+            if serializer.instance:
+                departure_error = serializer.departure_error(fields.get("departure_time"))
+                if departure_error:
+                    raise ValidationError({"departure_time": [departure_error]})
             airport_ids = {
                 fields.get(name, getattr(serializer.instance, name, None)).pk
                 for name in ("origin", "destination")

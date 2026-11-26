@@ -158,6 +158,7 @@ MAILERS = {
 }
 
 REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "config.errors.api_exception_handler",
     "DEFAULT_PAGINATION_CLASS": "config.pagination.ListPagination",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",

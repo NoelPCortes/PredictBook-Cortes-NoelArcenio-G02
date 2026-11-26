@@ -102,6 +102,14 @@ class ForecastPermissionsTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("data_source", response.data)
 
+    def test_forecast_rejects_crowd_score_out_of_range(self):
+        self.client.force_authenticate(self.staff)
+        for score in (-1.5, 100.1, "NaN", "Infinity"):
+            with self.subTest(score=score):
+                response = self.client.patch(self.url, {"crowd_score": score})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.data["crowd_score"], ["Enter a score from 0 to 100."])
+
     def test_calculated_forecast_cannot_be_deleted_by_head(self):
         self.mark_calculated()
         self.client.force_authenticate(self.head)
@@ -128,10 +136,10 @@ class ForecastPermissionsTests(APITestCase):
             raise RuntimeError("Recalculation failed")
 
         with (
+            self.assertLogs("config.errors", level="ERROR"),
             patch("traffic.services.recalculate_forecasts", side_effect=recalculate_then_fail),
-            self.assertRaisesRegex(RuntimeError, "Recalculation failed"),
         ):
-            self.client.delete(self.url)
+            self.assertEqual(self.client.delete(self.url).status_code, 500)
         self.assertEqual(list(CrowdForecast.objects.values_list("pk", flat=True)), [self.forecast.pk])
 
     def test_forecast_permissions_flags_follow_role_and_source(self):

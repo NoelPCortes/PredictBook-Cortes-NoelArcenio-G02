@@ -19,7 +19,7 @@ function ForecastForm({ id }: { id?: string }) {
   const [values, setValues] = useState<ForecastInput>(EMPTY_FORECAST)
   const [airports, setAirports] = useState<Airport[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
+  const [loadError, setLoadError] = useState<'not-found' | 'unavailable' | null>(null)
   const [canEdit, setCanEdit] = useState(!id)
   const [isCalculated, setIsCalculated] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -27,9 +27,17 @@ function ForecastForm({ id }: { id?: string }) {
   const { formRef, errors, formError, clearErrors, showErrors } = useRecordErrors(FIELD_NAMES)
   useEffect(() => {
     let isActive = true
-    void Promise.all([loadForecastAirports(), id ? getForecast(id) : Promise.resolve(null)])
+    const forecastRequest = id ? getForecast(id).catch(error => {
+      if (error instanceof ApiError && error.status === 404) return null
+      throw error
+    }) : Promise.resolve(null)
+    void Promise.all([loadForecastAirports(), forecastRequest])
       .then(([options, record]) => {
         if (!isActive) return
+        if (id && !record) {
+          setLoadError('not-found')
+          return
+        }
         setAirports(options)
         if (record) {
           setCanEdit(record.can_edit === true)
@@ -37,7 +45,7 @@ function ForecastForm({ id }: { id?: string }) {
           setValues({ airport: String(record.airport), date: record.date, crowd_level: record.crowd_level, crowd_score: record.crowd_score === null ? '' : String(record.crowd_score), data_source: record.data_source ?? '' })
         }
       })
-      .catch(error => { if (isActive) setLoadError(error instanceof ApiError && error.status === 404 ? 'Forecast not found.' : 'Unable to load the forecast form. Please try again.') })
+      .catch(() => { if (isActive) setLoadError('unavailable') })
       .finally(() => { if (isActive) setIsLoading(false) })
     return () => { isActive = false }
   }, [id, attempt])
@@ -56,7 +64,8 @@ function ForecastForm({ id }: { id?: string }) {
   return <RecordLayout>
     <h1>{id ? 'Edit forecast' : 'Add forecast'}</h1>
     {isLoading && <p role="status">Loading forecast form…</p>}
-    {loadError && <><RecordAlert kind="error">{loadError}</RecordAlert><button className="record-button record-secondary" onClick={() => { setLoadError(''); setIsLoading(true); setAttempt(value => value + 1) }}>Try again</button></>}
+    {loadError === 'not-found' && <><RecordAlert kind="error">Forecast not found.</RecordAlert><div><Link className="record-button record-secondary" to="/staff/forecasts">Back to forecasts</Link></div></>}
+    {loadError === 'unavailable' && <><RecordAlert kind="error">Unable to load the forecast form. Please try again.</RecordAlert><div><button type="button" className="record-button record-secondary" onClick={() => { setLoadError(null); setIsLoading(true); setAttempt(value => value + 1) }}>Try again</button></div></>}
     {!isLoading && !loadError && !canEdit && <RecordAlert kind="error">You do not have permission to edit this forecast.</RecordAlert>}
     {!isLoading && !loadError && canEdit && <form ref={formRef} className="record-form" onSubmit={submit} noValidate>
       {formError && <RecordAlert kind="error">{formError}</RecordAlert>}

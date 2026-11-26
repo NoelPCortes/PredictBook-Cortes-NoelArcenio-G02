@@ -12,10 +12,14 @@ from .calculation import (
     RECOMMENDATION_WINDOW,
     flight_totals,
 )
-from .models import CrowdForecast
+from .models import CROWD_SCORE_ERROR, CrowdForecast, validate_crowd_score
 
 
 class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
+    crowd_score = serializers.FloatField(
+        required=False, allow_null=True, validators=[validate_crowd_score],
+        error_messages={"invalid": CROWD_SCORE_ERROR},
+    )
     created_by_username = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()

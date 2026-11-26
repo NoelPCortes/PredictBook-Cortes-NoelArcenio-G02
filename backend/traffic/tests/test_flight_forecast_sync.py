@@ -66,7 +66,10 @@ class FlightForecastSyncTests(APITestCase):
             recalculate_forecasts(actor, pairs)
             raise RuntimeError("Recalculation failed")
 
-        with patch("flights.services.recalculate_forecasts", side_effect=recalculate_then_fail):
+        with (
+            self.assertLogs("config.errors", level="ERROR"),
+            patch("flights.services.recalculate_forecasts", side_effect=recalculate_then_fail),
+        ):
             self.assertEqual(self.client.post("/api/flights/", self.payload).status_code, 500)
         self.assertFalse(Flight.objects.exists())
         self.assertFalse(CrowdForecast.objects.exists())
@@ -76,6 +79,7 @@ class FlightForecastSyncTests(APITestCase):
         for method, payload in ((self.client.patch, {"available_seats": 20}), (self.client.delete, {})):
             with (
                 self.subTest(method=method.__name__),
+                self.assertLogs("config.errors", level="ERROR"),
                 patch("flights.services.recalculate_forecasts", side_effect=recalculate_then_fail),
             ):
                 self.assertEqual(method(url, payload).status_code, 500)

@@ -137,9 +137,9 @@ def test_blank_sources_become_staff_entry(users, forecast, payload, source, meth
 
 @pytest.mark.parametrize("level", ["low", "medium", "high"])
 def test_valid_levels_and_optional_score_have_no_extra_thresholds(users, payload, level):
-    response = client_for(users["staff"]).post(BASE, {**payload, "crowd_level": level, "crowd_score": -1.5}, format="json")
+    response = client_for(users["staff"]).post(BASE, {**payload, "crowd_level": level, "crowd_score": 25}, format="json")
     assert response.status_code == 201
-    assert response.json()["crowd_score"] == -1.5
+    assert response.json()["crowd_score"] == 25
 
 
 @pytest.mark.parametrize("method", ["post", "patch"])
