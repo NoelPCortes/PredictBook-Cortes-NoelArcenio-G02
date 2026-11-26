@@ -21,11 +21,6 @@ export default function LandingPage() {
     </nav></header>
     <main className="container">
       <section className="hero" aria-labelledby="hero-title"><div className="hero-copy"><p className="eyebrow">BEST DATE TO TRAVEL</p><h1 id="hero-title">Fly on the calm days.</h1><p className="intro">Search flights, see expected airport crowd levels on a simple calendar, and get suggested dates with open seats.</p></div><TrafficCalendar /></section>
-      <form className="search-bar" onSubmit={event => event.preventDefault()} aria-label="Flight search">
-        {([['From','Starting location'],['To','Destination'],['Date','Choose a date']] as const).map(([label, placeholder]) => <div className="search-field" key={label}><label htmlFor={label.toLowerCase()}>{label}</label><input id={label.toLowerCase()} name={label.toLowerCase()} placeholder={placeholder} type="text" /></div>)}
-        {/* TODO: Connect flight search when the search feature is implemented. */}
-        <button type="button" className="button search-button"><span className="search-icon" aria-hidden="true" />Search flights</button>
-      </form>
       <section id="features" className="features"><h2>Everything you need to pick a date</h2><div className="feature-grid">{features.map(([title, description], index) => <article className={`feature-card ${index === 3 ? 'staff-card' : ''}`} id={index === 3 ? 'staff' : undefined} key={title}><span className="feature-number">0{index + 1}</span><h3>{title}</h3><p>{description}</p></article>)}</div></section>
       <section id="how-it-works" className="how-it-works"><h2>How it works</h2><div className="steps">{steps.map(([title, description]) => <article key={title}><h3>{title}</h3><p>{description}</p></article>)}</div></section>
     </main>
