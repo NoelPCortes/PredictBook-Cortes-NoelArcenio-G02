@@ -25,4 +25,7 @@ describe('PredictBook landing page', () => {
   it('links Sign in to /signin', () => {
     expect(renderLandingPage()).toMatch(/<a[^>]*href="\/signin"[^>]*>Sign in<\/a>/)
   })
+  it('does not render the non-functional flight search form', () => {
+    expect(renderLandingPage()).not.toContain('<form')
+  })
 })

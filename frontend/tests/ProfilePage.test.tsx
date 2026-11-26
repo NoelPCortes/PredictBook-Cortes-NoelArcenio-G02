@@ -12,8 +12,18 @@ vi.mock('../src/features/profile/api', () => ({ updateProfile: vi.fn(), changePa
 const profile = { id: 1, username: 'traveler', email: 'traveler@example.com', first_name: 'Ada', last_name: 'Lee', role: 'traveler' as const }
 let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
+let notifyIntersection: IntersectionObserverCallback
+const observe = vi.fn()
+const disconnect = vi.fn()
 
 beforeEach(async () => {
+  observe.mockClear()
+  disconnect.mockClear()
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: IntersectionObserverCallback) { notifyIntersection = callback }
+    observe = observe
+    disconnect = disconnect
+  })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   setProfile(profile)
   vi.mocked(updateProfile).mockReset().mockResolvedValue(profile)
@@ -28,6 +38,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   clearSession()
+  vi.unstubAllGlobals()
 })
 
 function field(name: string) {
@@ -76,11 +87,46 @@ it('saves editable values and displays a success message', async () => {
 })
 
 it('moves focus to the selected account section and updates the sidebar state', async () => {
+  const password = container.querySelector<HTMLElement>('#password-security')!
+  password.scrollIntoView = vi.fn()
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }))
   await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/profile#password-security"]')!.click())
-  expect(document.activeElement).toBe(container.querySelector('#password-security'))
+  expect(document.activeElement).toBe(password)
+  expect(password.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
   expect(container.querySelector('a[aria-current="location"]')?.textContent).toBe('Password & Security')
   await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/profile#profile-information"]')!.click())
   expect(document.activeElement).toBe(container.querySelector('#profile-information'))
+})
+
+it('honors reduced motion when scrolling to a section', async () => {
+  const password = container.querySelector<HTMLElement>('#password-security')!
+  password.scrollIntoView = vi.fn()
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }))
+  await act(async () => container.querySelector<HTMLAnchorElement>('a[href="/profile#password-security"]')!.click())
+  expect(password.scrollIntoView).toHaveBeenCalledWith({ behavior: 'instant', block: 'start' })
+})
+
+it('observes both sections and follows scroll in both directions', async () => {
+  const information = container.querySelector('#profile-information')!
+  const password = container.querySelector('#password-security')!
+  expect(observe.mock.calls).toEqual([[information], [password]])
+  const entries = (showInformation: boolean) => [
+    { target: information, isIntersecting: showInformation },
+    { target: password, isIntersecting: !showInformation },
+  ] as IntersectionObserverEntry[]
+  const observer = {} as IntersectionObserver
+  await act(async () => notifyIntersection(entries(false), observer))
+  expect(container.querySelector('[aria-current="location"]')?.textContent).toBe('Password & Security')
+  await act(async () => notifyIntersection(entries(true), observer))
+  expect(container.querySelector('[aria-current="location"]')?.textContent).toBe('Profile Information')
+  await act(async () => root.unmount())
+  expect(disconnect).toHaveBeenCalledOnce()
+})
+
+it('keeps Sign out at the end of the account sidebar', () => {
+  const signOut = container.querySelector('.profile-sidebar')?.lastElementChild
+  expect(signOut?.tagName).toBe('BUTTON')
+  expect(signOut?.textContent).toMatch(/^sign out$/i)
 })
 
 it.each(['username', 'email', 'first_name', 'last_name'])('shows backend %s errors next to the field', async name => {
