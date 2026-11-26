@@ -55,6 +55,12 @@ new dashboard table or individual traveler detail in these summaries.
 
 ## Verification
 
+The Your records counts use `mine=true` for flights and forecasts. Forecast counts
+measure creator ownership even though Staff and Heads can edit any forecast.
+Flight edits remain owner-only for Staff. An available-seat change recalculates
+affected automatic forecasts before returning success, so a fresh dashboard or
+forecast request reads the updated totals.
+
 Backend tests cover counts, ordered dates, weekdays, tie behavior, period bounds,
 airport selection, project timezone, permissions and response privacy. Frontend
 API-mocked tests cover the real layout/data, airport changes, zero-data states,

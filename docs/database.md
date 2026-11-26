@@ -167,9 +167,9 @@ Expected airport crowd level for each airport and date. This table feeds the tra
 Rules:
 
 - One forecast per airport per date.
-- Any signed-in user can read forecasts. Staff and Heads can create manual entries. Staff can update or delete their own manual records; Heads can update or delete any manual record. Calculated rows are read-only, and Travelers cannot write.
+- Any signed-in user can read forecasts. Staff and Heads can create manual entries, edit any forecast, and delete manual forecasts. Travelers cannot write.
 - Requests containing `created_by` or `calculated_at` are rejected with field-level 400 messages.
-- Traveler responses omit creator information. Staff and Head responses include `created_by_username` and the server-computed `can_edit`. Other users' email addresses are never included.
+- Traveler responses omit creator information and write flags. Staff and Head responses include `created_by_username`, `can_edit`, and `can_delete`. Other users' email addresses are never included.
 - A blank data source is stored as `Staff entry`.
 - **The color is not stored.** The frontend picks it from `crowd_level` (see `../frontend/UI_STYLE_GUIDE.md`, traffic calendar).
 - Keep forecasts after their date passes. Comparing them with `historical_records` shows whether the 75% accuracy goal is met.
@@ -177,7 +177,8 @@ Rules:
 - No flights or zero total seats produces no calculated row. If a flight change leaves no seats for a pair, remove only its calculated row. Manual entries are preserved even with no flights.
 - Every source except exact `Calculated from 2026 flights and 2025 history`, legacy `Calculated from flights`, and `Sample data` is manual. Recalculation upgrades the legacy calculated label while preserving its creator. A manual airport/date entry always takes precedence and is never overwritten or deleted by automatic calculation.
 - A calculated row's required creator is the user who first triggers calculation, or the configured seed Staff user for management commands. Preserve that creator on later recalculations. Converting an old Sample data row establishes the current calculator as its calculated creator.
-- Calculated rows are read-only for every API role: PATCH and DELETE return 403. Clients cannot create the reserved calculated source. Staff/Head responses use `created_by_username=null`, `is_calculated=true`, and `can_edit=false`; the UI displays Calculated automatically. Traveler responses continue to omit creator fields.
+- Calculated rows can be patched by Staff and Heads. The server converts the row to `Staff entry`, updates `calculated_at`, and preserves its creator and airport/date pair. Attempts to change the pair or set a reserved calculated source return 400. Calculated rows return `is_calculated=true`, `created_by_username=null`, and `can_delete=false` to Staff and Heads. Deleting a calculated row returns 403.
+- Deleting a manual row recalculates its airport-date pair in the same transaction. A calculated row is restored when flights supply seat data for that pair.
 - Every forecast response includes live `flight_count`, `seats_total`, and `seats_booked`. These are response aggregates, not stored columns or new relationships. Two grouped flight queries serve the whole forecast list, guarded by a constant-query-count test. Pagination adds one COUNT query and limits the rows aggregated per response.
 - Constants in `traffic/calculation.py` are MEDIUM_THRESHOLD=50, HIGH_THRESHOLD=75, FLIGHT_WEIGHT=0.5, HISTORY_WEIGHT=0.5, HISTORY_DAY_OFFSETS=(371,364,357), RECOMMENDATION_WINDOW=7, and MAX_RECOMMENDATIONS=3. Flight/history reads are grouped or fetched in bulk; recalculation uses bulk writes.
 - Raw SQL flight/history changes do not trigger recalculation; run `python manage.py recalculate_forecasts` afterward. Flight create/update/delete and old/new pair recalculation share a transaction and explicit services, without signals. Lookups are locked to serialize calculations and manual writes.

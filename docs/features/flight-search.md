@@ -89,8 +89,15 @@ show linked backend field errors, focus the first invalid field, and show succes
 alerts. Delete retains confirmation with ghost Cancel and danger Delete.
 Staff can change only their flights; Heads any flight; Travelers cannot write.
 Signed-out reads/writes return 401. Traveler reads omit creator information.
-The existing route/time/seat/unique validation and transactional recalculation
-behavior remain unchanged. Client-created ownership is rejected with 400.
+Departure must not precede the current time when the flight is created or rescheduled.
+Existing past flights can still receive permitted edits to other fields. Arrival
+must follow departure and the airports must differ. The API trims and uppercases
+flight numbers before requiring two to ten letters or digits. It enforces integer
+total seats from 1 to 1000, integer available seats from zero through total seats,
+and a unique airline, flight number, and departure combination. Validation and
+attempts to set ownership return field-level 400 responses. Create, PATCH, and
+DELETE recalculate affected forecasts in the same transaction. Missing edit
+records show **Flight not found.** and a link back to Flights.
 
 ## Verification and remaining work
 
