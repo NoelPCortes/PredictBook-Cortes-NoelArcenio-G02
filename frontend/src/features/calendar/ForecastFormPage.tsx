@@ -21,6 +21,7 @@ function ForecastForm({ id }: { id?: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [canEdit, setCanEdit] = useState(!id)
+  const [isCalculated, setIsCalculated] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const { formRef, errors, formError, clearErrors, showErrors } = useRecordErrors(FIELD_NAMES)
@@ -32,6 +33,7 @@ function ForecastForm({ id }: { id?: string }) {
         setAirports(options)
         if (record) {
           setCanEdit(record.can_edit === true)
+          setIsCalculated(record.is_calculated)
           setValues({ airport: String(record.airport), date: record.date, crowd_level: record.crowd_level, crowd_score: record.crowd_score === null ? '' : String(record.crowd_score), data_source: record.data_source ?? '' })
         }
       })
@@ -46,7 +48,7 @@ function ForecastForm({ id }: { id?: string }) {
     clearErrors(); setIsSaving(true)
     const payload = { ...values, crowd_score: values.crowd_score === '' ? null : values.crowd_score }
     try {
-      if (id) await updateForecast(id, payload)
+      if (id) await updateForecast(id, isCalculated ? { crowd_level: payload.crowd_level, crowd_score: payload.crowd_score } : payload)
       else await createForecast(payload)
       navigate('/staff/forecasts', { state: { success: id ? 'Forecast updated.' : 'Forecast created.' } })
     } catch (error) { showErrors(error, 'Unable to save the forecast. Please try again.'); setIsSaving(false) }
@@ -59,11 +61,18 @@ function ForecastForm({ id }: { id?: string }) {
     {!isLoading && !loadError && canEdit && <form ref={formRef} className="record-form" onSubmit={submit} noValidate>
       {formError && <RecordAlert kind="error">{formError}</RecordAlert>}
       <div className="record-fields">
-        <RecordField searchable name="airport" label="Airport" value={values.airport} onChange={value => change('airport', value)} error={errors.airport} options={airports.map(airport => ({ value: String(airport.id), label: `${airport.code} — ${airport.name}`, searchText: `${airport.city} ${airport.country}` }))} />
-        <RecordField name="date" label="Date" type="date" value={values.date} onChange={value => change('date', value)} error={errors.date} />
+        {isCalculated ? <>
+          <p><strong>Airport</strong> {airports.find(airport => String(airport.id) === values.airport)?.code ?? values.airport}</p>
+          <p><strong>Date</strong> <time dateTime={values.date}>{values.date}</time></p>
+          <p><strong>Source</strong> Calculated automatically. Saving changes makes this a Staff entry.</p>
+        </> : <>
+          <RecordField searchable name="airport" label="Airport" value={values.airport} onChange={value => change('airport', value)} error={errors.airport} options={airports.map(airport => ({ value: String(airport.id), label: `${airport.code} — ${airport.name}`, searchText: `${airport.city} ${airport.country}` }))} />
+          <RecordField name="date" label="Date" type="date" value={values.date} onChange={value => change('date', value)} error={errors.date} />
+          {id && <p><strong>Source</strong> Staff entry</p>}
+        </>}
         <RecordField name="crowd_level" label="Crowd level" value={values.crowd_level} onChange={value => change('crowd_level', value as CrowdLevel | '')} error={errors.crowd_level} options={['Low', 'Medium', 'High'].map(level => ({ value: level.toLowerCase(), label: level }))} />
         <RecordField name="crowd_score" label="Crowd score (optional)" type="number" step="any" value={values.crowd_score ?? ''} onChange={value => change('crowd_score', value)} error={errors.crowd_score} />
-        <RecordField name="data_source" label="Data source (optional)" value={values.data_source} onChange={value => change('data_source', value)} error={errors.data_source} maxLength={100} />
+        {!isCalculated && <RecordField name="data_source" label="Data source (optional)" value={values.data_source} onChange={value => change('data_source', value)} error={errors.data_source} maxLength={100} />}
       </div>
       <div className="record-actions"><button type="submit" className="record-button" disabled={isSaving}>{isSaving ? 'Saving…' : id ? 'Save forecast' : 'Create forecast'}</button><Link className="record-button record-ghost" to="/staff/forecasts">Cancel</Link></div>
     </form>}
