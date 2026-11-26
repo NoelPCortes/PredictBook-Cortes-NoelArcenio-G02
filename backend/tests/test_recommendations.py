@@ -17,6 +17,11 @@ SELECTED = datetime(2026, 12, 15, 8, tzinfo=UTC)
 PATH = "/api/traffic/recommendations/"
 
 
+@pytest.fixture(autouse=True)
+def freeze_recommendation_clock(monkeypatch):
+    monkeypatch.setattr("traffic.insights.now", lambda: datetime(2026, 12, 1, tzinfo=UTC))
+
+
 def request(scenario, **params):
     client = APIClient()
     client.force_authenticate(scenario[0])
@@ -87,7 +92,7 @@ def test_only_departing_open_seats_qualify_and_manual_null_scores_are_excluded(
         airport=scenario[1][0], date=(SELECTED + timedelta(days=3)).date()
     ).update(crowd_score=None, data_source="Staff entry")
     assert request(scenario).json()["recommendations"] == []
-    assert "No qualifying Low crowd dates" in request(scenario).json()["message"]
+    assert request(scenario).json()["message"] == "No flights with open seats were found within 7 days of 2026-12-15."
 
 
 def test_missing_selected_forecast_returns_fewer_without_difference_or_invented_history(
@@ -150,7 +155,7 @@ def test_recommendation_permissions_validation_and_constant_query_count(scenario
     )
 
 
-def test_low_only_route_previews_and_no_lower_than_selected_requirement(scenario):
+def test_route_previews_include_medium_and_allow_a_higher_score_than_selected(scenario):
     add(scenario, 0, available=90)
     candidate = add(scenario, 1, available=60)
     add(scenario, 2, available=40)
@@ -160,7 +165,7 @@ def test_low_only_route_previews_and_no_lower_than_selected_requirement(scenario
     recalculate_forecasts(scenario[0])
     result = request(scenario, destination=scenario[1][1].pk).json()
     assert result["route"] == {"origin_code": "CEB", "destination_code": "MNL"}
-    assert len(result["recommendations"]) == 1
+    assert [row["crowd_level"] for row in result["recommendations"]] == ["low", "medium"]
     row = result["recommendations"][0]
     assert row["date"] == "2026-12-16"
     assert row["flight_count"] == 3 and row["open_seats"] == 230
@@ -169,7 +174,7 @@ def test_low_only_route_previews_and_no_lower_than_selected_requirement(scenario
     assert set(row["flights"][0]) == {"airline_name", "airline_code", "flight_number", "origin_code", "destination_code", "departure_time", "available_seats"}
     assert row["reasons"][1] == "3 flights from CEB to MNL depart on this date, with 230 open seats."
     assert row["score_difference"] < 0
-    assert len(request(scenario).json()["recommendations"]) == 2
+    assert len(request(scenario).json()["recommendations"]) == 3
     assert request(scenario, destination=scenario[1][0].pk).status_code == 400
     assert request(scenario, destination=999999).status_code == 404
     assert request(scenario, destination="bad").status_code == 400

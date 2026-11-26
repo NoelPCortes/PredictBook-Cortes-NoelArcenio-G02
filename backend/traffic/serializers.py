@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from rest_framework import serializers
 
@@ -6,7 +6,12 @@ from accounts.models import User
 from accounts.serializers import StrictFieldsMixin
 from flights.models import Airport
 
-from .calculation import CALCULATED_SOURCES, flight_totals
+from .calculation import (
+    CALCULATED_SOURCES,
+    HISTORY_DAY_OFFSETS,
+    RECOMMENDATION_WINDOW,
+    flight_totals,
+)
 from .models import CrowdForecast
 
 
@@ -132,6 +137,14 @@ class ForecastFilterSerializer(serializers.Serializer):
 class DateInsightFilterSerializer(serializers.Serializer):
     airport = serializers.IntegerField(min_value=1)
     date = serializers.DateField(input_formats=("%Y-%m-%d",))
+
+    def validate_date(self, value):
+        # The insight windows read prior history and use an exclusive end date.
+        first = date.min + timedelta(days=max(HISTORY_DAY_OFFSETS) + RECOMMENDATION_WINDOW)
+        last = date.max - timedelta(days=RECOMMENDATION_WINDOW + 1)
+        if not first <= value <= last:
+            raise serializers.ValidationError("Enter a valid date.")
+        return value
 
 
 class RecommendationFilterSerializer(DateInsightFilterSerializer):
