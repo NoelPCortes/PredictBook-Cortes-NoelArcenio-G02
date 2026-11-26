@@ -25,6 +25,7 @@ vi.mock('../src/features/calendar/api', () => ({ loadDateExplanation: vi.fn(), l
 const recommendations: DateRecommendations = {
   route: null,
   selected: { date: '2026-01-14', has_data: true, crowd_score: 80, crowd_level: 'high' },
+  selected_status: { state: 'bookable', message: '' },
   recommendations: [15, 16, 17].map(day => ({ date: `2026-01-${day}`, weekday: ['Thursday', 'Friday', 'Saturday'][day - 15]!, crowd_level: 'low', crowd_score: 40, score_difference: 40, open_seats: 60, flight_count: 2, history_average_occupancy_percent: 50, flights: [], reasons: ['60 seats are open on 1 departing flights.'] })), message: '',
 }
 const explanation: DateExplanation = {
@@ -53,7 +54,7 @@ beforeEach(() => {
     id: 7, airline: 1, airline_name: 'Philippine Airlines', airline_code: 'PR', flight_number: '100', origin: 1, origin_code: 'CEB', origin_name: 'Cebu', destination: 2, destination_code: 'MNL', destination_name: 'Manila', departure_time: '2026-01-14T00:00:00Z', arrival_time: '2026-01-14T01:30:00Z', total_seats: 180, available_seats: 25,
   }])
   vi.mocked(loadDateExplanation).mockReset().mockResolvedValue(explanation)
-  vi.mocked(loadDateRecommendations).mockReset().mockResolvedValue({ ...recommendations, recommendations: [], message: 'No qualifying dates are available within 7 days before or after your selected date.' })
+  vi.mocked(loadDateRecommendations).mockReset().mockResolvedValue({ ...recommendations, recommendations: [], message: 'No flights with open seats were found within 7 days of 2026-01-14.' })
   setProfile({ id: 1, username: 'traveler', email: 'traveler@example.com', role: 'traveler', first_name: '', last_name: '' })
   container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 })
@@ -151,7 +152,7 @@ it('renders up to three recommendations and selects a card date with fresh reque
   expect(container.querySelector('.calendar-recommendations')?.textContent).toContain('40.0 points lower than your selected date')
   expect(container.querySelector('.calendar-recommendations')?.textContent).toContain('60 open seats')
   expect(container.querySelector('.calendar-recommendations img[src*="bulbIcon"]')).not.toBeNull()
-  vi.mocked(loadDateRecommendations).mockResolvedValue({ ...recommendations, recommendations: [], message: 'No qualifying dates are available.' })
+  vi.mocked(loadDateRecommendations).mockResolvedValue({ ...recommendations, recommendations: [], message: 'No flights with open seats were found within 7 days of 2026-01-15.' })
   await click('.calendar-recommendation-card')
   expect(day(15).getAttribute('aria-pressed')).toBe('true')
   expect(loadDateRecommendations).toHaveBeenLastCalledWith('1', '2026-01-15')
@@ -160,13 +161,58 @@ it('renders up to three recommendations and selects a card date with fresh reque
   expect(container.querySelectorAll('.calendar-recommendation-card')).toHaveLength(0)
 })
 it('shows fewer dates and missing-selected-data messages without a score comparison', async () => {
-  vi.mocked(loadDateRecommendations).mockResolvedValue({ ...recommendations, selected: { date: '2026-01-14', has_data: false, crowd_score: null, crowd_level: null }, recommendations: [{ ...recommendations.recommendations[0]!, score_difference: null }], message: 'Only 1 qualifying dates are available within 7 days before or after your selected date.' })
+  vi.mocked(loadDateRecommendations).mockResolvedValue({ ...recommendations, selected: { date: '2026-01-14', has_data: false, crowd_score: null, crowd_level: null }, recommendations: [{ ...recommendations.recommendations[0]!, score_difference: null }], message: 'Only 1 qualifying date is available within 7 days of 2026-01-14.' })
   await render()
   const section = container.querySelector('.calendar-recommendations')!
   expect(section.textContent).toContain('Your selected date has no forecast.')
-  expect(section.textContent).toContain('Only 1 qualifying dates')
+  expect(section.textContent).toContain('Only 1 qualifying date is available')
   expect(section.textContent).not.toContain('points lower than your selected date')
   expect(section.querySelectorAll('.calendar-recommendation-card')).toHaveLength(1)
+})
+it.each([
+  ['full', 'All flights on this date are full.'],
+  ['departed', 'All flights on this date have already departed.'],
+  ['no_flights', 'No flights are scheduled for this date.'],
+] as const)('shows the %s flight status under the selected date and before recommendations', async (state, message) => {
+  vi.mocked(loadDateRecommendations).mockResolvedValueOnce({ ...recommendations, selected_status: { state, message } })
+  await render()
+  const status = container.querySelector('.airport-date-details h3 + .selected-flight-status')!
+  const alternatives = container.querySelector('.calendar-recommendations')!
+  expect(status.textContent).toBe(message)
+  expect(status.compareDocumentPosition(alternatives) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(alternatives.querySelectorAll('.calendar-recommendation-card')).toHaveLength(3)
+  expect(loadDateRecommendations).toHaveBeenCalledOnce()
+  await act(async () => day(15).click())
+  expect(container.querySelector('.selected-flight-status')).toBeNull()
+})
+
+it('labels Low and Medium recommendations and displays the backend reasons', async () => {
+  const low = { ...recommendations.recommendations[0]!, reasons: ['This day has a Low crowd level (score 40.0).'] }
+  const medium = { ...recommendations.recommendations[1]!, crowd_level: 'medium' as const, crowd_score: 60, reasons: ['This day has a Medium crowd level, moderate congestion (score 60.0).'] }
+  vi.mocked(loadDateRecommendations).mockResolvedValue({ ...recommendations, recommendations: [low, medium] })
+  await render()
+  const cards = [...container.querySelectorAll('.calendar-recommendation-card')]
+  expect(cards.map(card => card.querySelector('.record-crowd-chip')?.textContent)).toEqual(['Low crowd', 'Medium crowd'])
+  expect(cards[0]?.textContent).toContain(low.reasons[0])
+  expect(cards[1]?.textContent).toContain(medium.reasons[0])
+})
+
+it('shows the end of the flight schedule for a selected date in 2027', async () => {
+  vi.setSystemTime(new Date('2026-12-15T04:00:00Z'))
+  await render()
+  vi.mocked(loadDateRecommendations).mockResolvedValue({
+    ...recommendations,
+    selected: { date: '2027-01-01', has_data: false, crowd_score: null, crowd_level: null },
+    selected_status: { state: 'no_flights', message: 'No flights are scheduled for this date.' },
+    recommendations: [],
+    message: 'No flights with open seats were found within 7 days of 2027-01-01. Scheduled flights end on 2026-12-31.',
+  })
+  await click('[aria-label="Next month"]')
+  expect(loadDateRecommendations).toHaveBeenLastCalledWith('1', '2027-01-01')
+  expect(container.querySelector('.airport-date-details h3')?.textContent).toBe('January 1, 2027')
+  expect(container.querySelector('.selected-flight-status')?.textContent).toBe('No flights are scheduled for this date.')
+  expect(container.querySelector('.calendar-recommendations')?.textContent).toContain('Scheduled flights end on 2026-12-31.')
+  expect(container.querySelectorAll('.calendar-recommendation-card')).toHaveLength(0)
 })
 it('handles recommendation loading, errors and retry', async () => {
   vi.mocked(loadDateRecommendations).mockReturnValueOnce(new Promise(() => {}))
