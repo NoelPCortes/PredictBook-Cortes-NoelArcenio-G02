@@ -6,6 +6,7 @@ import RecordLayout from '../../components/RecordLayout'
 import RecordAlert from '../../components/RecordAlert'
 import RecordField from '../../components/RecordField'
 import { useRecordErrors } from '../../components/useRecordErrors'
+import { usePendingAction } from '../../components/usePendingAction'
 import type { Airport } from '../../types/flights'
 import type { CrowdLevel } from '../../types/traffic'
 import { createForecast, getForecast, loadForecastAirports, updateForecast } from './api'
@@ -22,7 +23,7 @@ function ForecastForm({ id }: { id?: string }) {
   const [loadError, setLoadError] = useState<'not-found' | 'unavailable' | null>(null)
   const [canEdit, setCanEdit] = useState(!id)
   const [isCalculated, setIsCalculated] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
+  const { isPending: isSaving, tryBegin, finish } = usePendingAction()
   const [attempt, setAttempt] = useState(0)
   const { formRef, errors, formError, clearErrors, showErrors } = useRecordErrors(FIELD_NAMES)
   useEffect(() => {
@@ -52,14 +53,14 @@ function ForecastForm({ id }: { id?: string }) {
   function change(name: keyof ForecastInput, value: string) { setValues(previous => ({ ...previous, [name]: value })) }
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (isSaving) return
-    clearErrors(); setIsSaving(true)
+    if (!tryBegin()) return
+    clearErrors()
     const payload = { ...values, crowd_score: values.crowd_score === '' ? null : values.crowd_score }
     try {
       if (id) await updateForecast(id, isCalculated ? { crowd_level: payload.crowd_level, crowd_score: payload.crowd_score } : payload)
       else await createForecast(payload)
       navigate('/staff/forecasts', { state: { success: id ? 'Forecast updated.' : 'Forecast created.' } })
-    } catch (error) { showErrors(error, 'Unable to save the forecast. Please try again.'); setIsSaving(false) }
+    } catch (error) { showErrors(error, 'Unable to save the forecast. Please try again.'); finish() }
   }
   return <RecordLayout>
     <h1>{id ? 'Edit forecast' : 'Add forecast'}</h1>
@@ -67,7 +68,7 @@ function ForecastForm({ id }: { id?: string }) {
     {loadError === 'not-found' && <><RecordAlert kind="error">Forecast not found.</RecordAlert><div><Link className="record-button record-secondary" to="/staff/forecasts">Back to forecasts</Link></div></>}
     {loadError === 'unavailable' && <><RecordAlert kind="error">Unable to load the forecast form. Please try again.</RecordAlert><div><button type="button" className="record-button record-secondary" onClick={() => { setLoadError(null); setIsLoading(true); setAttempt(value => value + 1) }}>Try again</button></div></>}
     {!isLoading && !loadError && !canEdit && <RecordAlert kind="error">You do not have permission to edit this forecast.</RecordAlert>}
-    {!isLoading && !loadError && canEdit && <form ref={formRef} className="record-form" onSubmit={submit} noValidate>
+    {!isLoading && !loadError && canEdit && <form ref={formRef} className="record-form" onSubmit={submit} noValidate aria-busy={isSaving}>
       {formError && <RecordAlert kind="error">{formError}</RecordAlert>}
       <div className="record-fields">
         {isCalculated ? <>

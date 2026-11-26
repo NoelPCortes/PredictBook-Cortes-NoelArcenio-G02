@@ -3,7 +3,7 @@ import RecordAlert from '../../components/RecordAlert'
 import { useRemoteResource } from '../../components/useRemoteResource'
 import { getStaffDetails } from './api'
 
-export default function StaffDetailsCard({ id, refresh, onRemove }: { id: number; refresh: number; onRemove: () => void }) {
+export default function StaffDetailsCard({ id, refresh, isRemoving, onRemove }: { id: number; refresh: number; isRemoving: boolean; onRemove: () => void }) {
   const [attempt,setAttempt] = useState(0)
   const load = useCallback(() => getStaffDetails(id),[id])
   const resource = useRemoteResource(`staff-details/${id}/${refresh}/${attempt}`,load)
@@ -18,7 +18,7 @@ export default function StaffDetailsCard({ id, refresh, onRemove }: { id: number
         <div><dt>Date joined</dt><dd><time dateTime={result.date_joined}>{new Date(result.date_joined).toLocaleDateString('en-US',{timeZone:'UTC'})}</time></dd></div>
         <div><dt>Flights created</dt><dd>{result.flights_created}</dd></div><div><dt>Forecasts created</dt><dd>{result.forecasts_created}</dd></div>
       </dl>
-      <button className="record-button record-danger" onClick={onRemove}>Remove Staff access</button>
+      <button type="button" className="record-button record-danger" disabled={isRemoving} onClick={onRemove}>Remove Staff access</button>
     </>}
   </section>
 }

@@ -123,6 +123,17 @@ it('creates from five labeled fields without sending server-managed fields', asy
   expect(createForecast).toHaveBeenCalledWith({ airport: '1', date: '2026-12-01', crowd_level: 'low', crowd_score: null, data_source: '' })
   expect(container.querySelector('[role="status"]')?.textContent).toBe('Forecast created.')
 })
+it('ignores repeated submits in the same render while a forecast save is pending', async () => {
+  vi.mocked(updateForecast).mockReturnValueOnce(new Promise(() => {}))
+  await render('/staff/forecasts/7/edit')
+  const form = container.querySelector('form')!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  expect(updateForecast).toHaveBeenCalledOnce()
+  expect(form.getAttribute('aria-busy')).toBe('true')
+  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+})
 it('updates existing values and preserves optional negative scores without extra rules', async () => {
   await render('/staff/forecasts/7/edit')
   expect(field('airport').value).toBe('1'); expect(field('date').value).toBe('2026-12-01')

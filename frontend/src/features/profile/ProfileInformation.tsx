@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { setProfile } from '../../api/authState'
 import { ApiError, fieldMessage } from '../../api/client'
 import AuthField from '../../components/AuthField'
+import { usePendingAction } from '../../components/usePendingAction'
 import type { Profile } from '../../types/auth'
 import userIcon from '../../assets/icons/UserCircleIcon.png'
 import { updateProfile } from './api'
@@ -19,7 +20,7 @@ export default function ProfileInformation({ profile }: { profile: Profile }) {
   const [values, setValues] = useState<ProfileFields>(() => ({ username: profile.username, email: profile.email, first_name: profile.first_name, last_name: profile.last_name }))
   const [errors, setErrors] = useState<Partial<Record<keyof ProfileFields, string>>>({})
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const { isPending: isSaving, tryBegin, finish } = usePendingAction()
   const formRef = useRef<HTMLFormElement>(null)
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -33,7 +34,7 @@ export default function ProfileInformation({ profile }: { profile: Profile }) {
     setErrors(nextErrors)
     const invalid = fields.find(field => nextErrors[field.name])
     if (invalid) { formRef.current?.querySelector<HTMLInputElement>(`[name="${invalid.name}"]`)?.focus(); return }
-    setIsSaving(true)
+    if (!tryBegin()) return
     try {
       const updated = await updateProfile({ ...values, username: values.username.trim(), email: values.email.trim() })
       setValues({ username: updated.username, email: updated.email, first_name: updated.first_name, last_name: updated.last_name })
@@ -48,7 +49,7 @@ export default function ProfileInformation({ profile }: { profile: Profile }) {
       const firstInvalid = fields.find(field => backendErrors[field.name])
       if (firstInvalid) formRef.current?.querySelector<HTMLInputElement>(`[name="${firstInvalid.name}"]`)?.focus()
       else setFeedback({ message: error instanceof ApiError ? fieldMessage(error.fields.detail) ?? fieldMessage(error.fields.non_field_errors) ?? 'Unable to save your profile. Please try again.' : 'Unable to save your profile. Please try again.', isError: true })
-    } finally { setIsSaving(false) }
+    } finally { finish() }
   }
 
   return <section className="profile-card" id="profile-information" tabIndex={-1} aria-labelledby="profile-information-title">
