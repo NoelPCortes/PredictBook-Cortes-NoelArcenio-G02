@@ -51,6 +51,7 @@ def register_user(validated_fields: dict) -> User:
         raise duplicate_identity_error(error) from error
 
 
+@transaction.atomic
 def sign_in(identifier: str, password: str, request) -> dict:
     candidates = list(
         User.objects.filter(Q(username=identifier) | Q(email=identifier))[:2]

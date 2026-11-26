@@ -128,6 +128,22 @@ describe('connected account flows', () => {
     expect(readTokens()).toBeNull()
   })
 
+  it.each(['/signup', '/signin'])('ignores repeated submits in the same render on %s', async path => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {}))
+    await render(path)
+    if (path === '/signup') validSignup()
+    else {
+      input('username', profile.username)
+      input('password', 'Test-flow-password-927!')
+    }
+    const form = container.querySelector('form')!
+    await act(async () => {
+      for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
+  })
+
   it.each(['username', 'password'])('dismisses signup success when the signin %s is edited', async name => {
     fetchMock.mockResolvedValueOnce(response(profile, 201))
     await render('/signup')
@@ -231,6 +247,7 @@ describe('connected account flows', () => {
     expect(JSON.parse(logoutCall[1]!.body as string)).toEqual({ refresh: tokens.refresh })
     expect(readTokens()).toBeNull()
     expect(container.querySelector('h1')?.textContent).toBe('Welcome back')
+    expect(container.querySelector('.auth-success')?.textContent).toBe('Signed out.')
   })
 
   it('redirects signed-out Home visitors to sign in without requesting protected data', async () => {
@@ -254,6 +271,7 @@ describe('connected account flows', () => {
     await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Sign Out')!.click())
     expect(readTokens()).toBeNull()
     expect(container.querySelector('h1')?.textContent).toBe('Welcome back')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Signed out on this device. The server could not end the session.')
   })
 
   it('keeps landing public', async () => {
@@ -326,6 +344,7 @@ describe('role redirects and access', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('.profile-sidebar button')!.click())
     expect(readTokens()).toBeNull()
     expect(currentPath()).toBe('/signin')
+    expect(container.querySelector('.auth-success')?.textContent).toBe('Signed out.')
     const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/logout/'))!
     expect(JSON.parse(request[1]!.body as string)).toEqual({ refresh: tokens.refresh })
   })

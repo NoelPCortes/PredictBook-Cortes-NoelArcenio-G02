@@ -4,9 +4,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import AuthLayout from '../../components/AuthLayout'
 import type { SampleDay } from '../../components/AuthLayout'
 import AuthField from '../../components/AuthField'
+import { usePendingAction } from '../../components/usePendingAction'
 import { signin } from './api'
 import { writeTokens } from '../../api/authStorage'
-import { setProfile } from '../../api/authState'
+import { clearSignOutNotice, setProfile, useAuth } from '../../api/authState'
 import { ROLE_LANDING_PATHS } from '../../types/auth'
 import successIcon from '../../assets/icons/successIcon.png'
 
@@ -23,14 +24,16 @@ const sampleDays: readonly SampleDay[] = [
 export default function SignInPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { signOutNotice } = useAuth()
   const navigationState = location.state as { accountCreated?: boolean } | null
   const [hasSignupSuccess, setHasSignupSuccess] = useState(() => navigationState?.accountCreated === true)
+  const notice = hasSignupSuccess ? { message: 'Account created. Please sign in.', isError: false } : signOutNotice
   useEffect(() => {
     if (navigationState?.accountCreated) {
       navigate(location.pathname, { replace: true, state: null })
     }
   }, [navigationState, location.pathname, navigate])
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { isPending: isSubmitting, tryBegin, finish } = usePendingAction()
   const [serverError, setServerError] = useState('')
   const errorRef = useRef<HTMLParagraphElement>(null)
   const usernameRef = useRef<HTMLInputElement>(null)
@@ -54,7 +57,7 @@ export default function SignInPage() {
       passwordRef.current?.focus()
       return
     }
-    setIsSubmitting(true)
+    if (!tryBegin()) return
     try {
       const result = await signin(usernameRef.current!.value.trim(), passwordRef.current!.value)
       writeTokens({ access: result.access, refresh: result.refresh })
@@ -64,7 +67,7 @@ export default function SignInPage() {
       setServerError('Unable to sign in. Check your credentials and try again.')
       requestAnimationFrame(() => errorRef.current?.focus())
     } finally {
-      setIsSubmitting(false)
+      finish()
     }
   }
 
@@ -73,15 +76,17 @@ export default function SignInPage() {
       intro="Sign in to search flights, check airport crowd levels, and get suggested dates. Staff sign in here too."
       panelTitle="Know the crowd before you book."
       panelIntro="Low, Medium, or High, for every day of your trip." days={sampleDays}>
-      {hasSignupSuccess && <div className="auth-success" role="status"><img src={successIcon} alt="" aria-hidden="true" /><span>Account created. Please sign in.</span></div>}
-      <form onSubmit={handleSubmit} onChange={() => setHasSignupSuccess(false)} noValidate aria-busy={isSubmitting}>
+      {notice && (notice.isError
+        ? <p className="signin-error" role="alert">{notice.message}</p>
+        : <div className="auth-success" role="status"><img src={successIcon} alt="" aria-hidden="true" /><span>{notice.message}</span></div>)}
+      <form onSubmit={handleSubmit} onChange={() => { setHasSignupSuccess(false); clearSignOutNotice() }} noValidate aria-busy={isSubmitting}>
         {serverError && <p ref={errorRef} tabIndex={-1} className="signin-error" role="alert">{serverError}</p>}
         <AuthField ref={usernameRef} id="signin-username" name="username" label="Email or username" type="text" autoComplete="username" placeholder="Enter your email or username" error={errors.username ? 'Enter your email or username.' : undefined} errorId="username-error" />
         <AuthField ref={passwordRef} id="signin-password" name="password" label="Password" type="password" autoComplete="current-password" placeholder="Enter your password" error={errors.password ? 'Enter your password.' : undefined} errorId="password-error" />
         <button type="submit" className="button signin-submit" disabled={isSubmitting}>{isSubmitting ? 'Signing in?' : 'Sign in'}</button>
       </form>
       <div className="signin-divider"><span>Don’t have an account yet?</span></div>
-      <Link to="/signup" className="button signin-create">Create an account</Link>
+      <Link to="/signup" className="button signin-create" onClick={clearSignOutNotice}>Create an account</Link>
     </AuthLayout>
   )
 }

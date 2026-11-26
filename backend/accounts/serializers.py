@@ -1,9 +1,11 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.validators import UniqueValidator
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -77,6 +79,15 @@ class SigninSerializer(StrictFieldsMixin, serializers.Serializer):
         return services.sign_in(**attrs, request=self.context["request"])
 
 
+class RefreshSerializer(TokenRefreshSerializer):
+    @transaction.atomic
+    def validate(self, attrs):
+        try:
+            return super().validate(attrs)
+        except User.DoesNotExist:
+            raise InvalidToken("Invalid or expired refresh token.") from None
+
+
 class LogoutSerializer(StrictFieldsMixin, serializers.Serializer):
     refresh = serializers.CharField(write_only=True)
 
@@ -90,6 +101,7 @@ class LogoutSerializer(StrictFieldsMixin, serializers.Serializer):
             raise PermissionDenied("Refresh token belongs to another account.")
         return token
 
+    @transaction.atomic
     def save(self):
         self.validated_data["refresh"].blacklist()
 

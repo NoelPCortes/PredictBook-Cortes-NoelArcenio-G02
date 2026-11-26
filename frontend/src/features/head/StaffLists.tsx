@@ -6,6 +6,7 @@ import RecordField from '../../components/RecordField'
 import RecordAlert from '../../components/RecordAlert'
 import DeleteConfirmation from '../../components/DeleteConfirmation'
 import { useRemoteResource } from '../../components/useRemoteResource'
+import { usePendingAction } from '../../components/usePendingAction'
 import { getStaffList, revokeStaff } from './api'
 import StaffDetailsCard from './StaffDetailsCard'
 
@@ -21,20 +22,20 @@ export default function StaffLists({ refresh, children }: { refresh: number; chi
   const load = useCallback(() => getStaffList(staffPage,pendingPage,search),[staffPage,pendingPage,search])
   const lists = useRemoteResource(`staff-lists/${refresh}/${attempt}/${staffPage}/${pendingPage}/${search}`,load)
   const [pending,setPending] = useState<Removal | null>(null)
-  const [removing,setRemoving] = useState(false)
+  const { isPending: removing, tryBegin, finish } = usePendingAction()
   const [error,setError] = useState('')
   const [success,setSuccess] = useState('')
   function ask(target: Removal) {setPending(target);setError('');setSuccess('')}
   async function remove() {
-    if (!pending || removing) return
-    setRemoving(true);setError('');setSuccess('')
+    if (!pending || !tryBegin()) return
+    setError('');setSuccess('')
     try {
       const result = await revokeStaff(pending.email)
       if (!pending.isPending) setSelected(null)
       setSuccess(result.detail);setPending(null);setAttempt(value => value + 1)
     } catch (error) {
       setError(error instanceof ApiError ? fieldMessage(error.fields.detail) ?? fieldMessage(error.fields.email) ?? fieldMessage(error.fields.non_field_errors) ?? 'Unable to remove Staff access. Please try again.' : 'Unable to remove Staff access. Please try again.')
-    } finally {setRemoving(false)}
+    } finally {finish()}
   }
   return <div className="head-management-layout">
     <aside className="head-card head-staff-side" aria-label="Staff and pending assignments">
@@ -58,7 +59,7 @@ export default function StaffLists({ refresh, children }: { refresh: number; chi
       {children}
       {success && <RecordAlert kind="success">{success}</RecordAlert>}
       {pending && <DeleteConfirmation key={pending.email} message={pending.isPending ? `Remove the pending Staff assignment for ${pending.email}?` : `Remove Staff access for ${pending.username}? They become a Traveler. Their account is not deleted.`} isDeleting={removing} error={error} onCancel={() => {setPending(null);setError('')}} onDelete={() => {void remove()}} actionLabel="Remove" pendingLabel="Removing..." />}
-      {selected ? <StaffDetailsCard key={selected.id} id={selected.id} refresh={refresh} onRemove={() => ask({...selected,isPending:false})} /> : <section className="head-card"><p>Select a Staff member to see their details.</p></section>}
+      {selected ? <StaffDetailsCard key={selected.id} id={selected.id} refresh={refresh} isRemoving={removing} onRemove={() => ask({...selected,isPending:false})} /> : <section className="head-card"><p>Select a Staff member to see their details.</p></section>}
     </div>
   </div>
 }

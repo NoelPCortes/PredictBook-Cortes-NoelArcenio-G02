@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import AuthLayout from '../../components/AuthLayout'
 import type { SampleDay } from '../../components/AuthLayout'
 import AuthField from '../../components/AuthField'
+import { usePendingAction } from '../../components/usePendingAction'
 
 import { signup } from './api'
 import { ApiError, fieldMessage } from '../../api/client'
@@ -28,7 +29,7 @@ type Errors = Partial<Record<FieldName, string>>
 
 export default function SignUpPage() {
   const navigate = useNavigate()
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { isPending: isSubmitting, tryBegin, finish } = usePendingAction()
   const [serverError, setServerError] = useState('')
   const errorRef = useRef<HTMLParagraphElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -57,7 +58,7 @@ export default function SignUpPage() {
       formRef.current?.querySelector<HTMLInputElement>(`[name="${firstInvalid.name}"]`)?.focus()
       return
     }
-    setIsSubmitting(true)
+    if (!tryBegin()) return
     try {
       await signup({ username, email, password })
       navigate('/signin', { replace: true, state: { accountCreated: true } })
@@ -78,7 +79,7 @@ export default function SignUpPage() {
         requestAnimationFrame(() => errorRef.current?.focus())
       }
     } finally {
-      setIsSubmitting(false)
+      finish()
     }
   }
 

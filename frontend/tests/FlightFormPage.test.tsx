@@ -154,7 +154,11 @@ it('handles loading, failed lookups and retry', async () => {
 })
 it('keeps submit disabled while the save is pending', async () => {
   vi.mocked(createFlight).mockReturnValue(new Promise(() => {}))
-  await render(); await submit(); await submit()
+  await render()
+  const form = container.querySelector('form')!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   expect(createFlight).toHaveBeenCalledOnce()
 })

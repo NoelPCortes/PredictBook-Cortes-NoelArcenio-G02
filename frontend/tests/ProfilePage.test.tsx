@@ -196,8 +196,10 @@ it.each(['#profile-information', '#password-security'])('prevents repeated submi
   if (section === '#password-security') await fillPasswords()
   vi.mocked(updateProfile).mockReturnValueOnce(new Promise(() => {}))
   vi.mocked(changePassword).mockReturnValueOnce(new Promise(() => {}))
-  await submit(section)
-  await submit(section)
+  const form = container.querySelector(`${section} form`)!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   expect(container.querySelector<HTMLButtonElement>(`${section} button`)?.disabled).toBe(true)
   expect(section === '#profile-information' ? updateProfile : changePassword).toHaveBeenCalledOnce()
 })

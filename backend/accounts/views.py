@@ -19,6 +19,7 @@ from .serializers import (
     PasswordChangeSerializer,
     PendingStaffSerializer,
     ProfileSerializer,
+    RefreshSerializer,
     RemoveHeadSerializer,
     SigninSerializer,
     SignupSerializer,
@@ -62,6 +63,7 @@ class SigninView(generics.GenericAPIView):
 
 class RefreshView(TokenRefreshView):
     permission_classes = (AllowAny,)
+    serializer_class = RefreshSerializer
 
 
 class LogoutView(generics.GenericAPIView):

@@ -8,6 +8,7 @@ import DeleteConfirmation from '../../components/DeleteConfirmation'
 import PageControls from '../../components/PageControls'
 import CrowdChip from '../../components/CrowdChip'
 import { useRemoteResource } from '../../components/useRemoteResource'
+import { usePendingAction } from '../../components/usePendingAction'
 import backIcon from '../../assets/icons/chevron-leftIcon.png'
 import type { Forecast } from '../../types/traffic'
 import type { Airport } from '../../types/flights'
@@ -50,15 +51,15 @@ function ForecastRecords({ airport, globalSearch, airports, onSuccess }: { airpo
   const load = useCallback(() => loadForecastList(query), [query])
   const result = useRemoteResource(`forecast-results/${JSON.stringify(query)}/${attempt}`, load)
   const [pending, setPending] = useState<Forecast | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const { isPending: deleting, tryBegin, finish } = usePendingAction()
   const [error, setError] = useState('')
   const airportName = (id: number) => { const record = airports.find(item => item.id === id); return record ? `${record.code} — ${record.name}` : String(id) }
   async function remove() {
-    if (!pending || deleting) return
-    setDeleting(true); setError('')
+    if (!pending || !tryBegin()) return
+    setError('')
     try { await deleteForecast(pending.id); setAttempt(value => value + 1); setPending(null); onSuccess('Forecast deleted.') }
     catch (error) { setError(error instanceof ApiError ? fieldMessage(error.fields.detail) ?? 'Unable to delete the forecast. Please try again.' : 'Unable to delete the forecast. Please try again.') }
-    finally { setDeleting(false) }
+    finally { finish() }
   }
   function change(name: keyof typeof filters, value: string) { setFilters(previous => ({ ...previous, [name]: value })); setPage(1) }
   return <>
