@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import Upper
 
 
 class User(AbstractUser):
@@ -17,6 +18,12 @@ class User(AbstractUser):
         blank=True,
         related_name="promoted_heads",
     )
+
+    class Meta(AbstractUser.Meta):
+        constraints = (
+            models.UniqueConstraint(Upper("username"), name="accounts_username_case_insensitive_unique"),
+            models.UniqueConstraint(Upper("email"), name="accounts_email_case_insensitive_unique"),
+        )
 
 
 class StaffAssignment(models.Model):

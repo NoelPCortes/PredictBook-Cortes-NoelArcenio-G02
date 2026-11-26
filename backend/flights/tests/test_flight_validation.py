@@ -1,10 +1,25 @@
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError
+from django.test import SimpleTestCase
 from django.utils.timezone import now
 from rest_framework.test import APITestCase
 
 from accounts.models import User
 from flights.models import Airline, Airport, Flight
+
+
+class FlightModelValidatorTests(SimpleTestCase):
+    def test_model_validators_reject_bad_airport_airline_flight_codes_and_seats(self):
+        invalid_values = (
+            (Airport, "code", "CeB"),
+            (Airline, "code", "!"),
+            (Flight, "flight_number", "1"),
+            (Flight, "total_seats", 0),
+        )
+        for model, field, value in invalid_values:
+            with self.subTest(model=model, field=field), self.assertRaises(ValidationError):
+                model._meta.get_field(field).run_validators(value)
 
 
 class FlightValidationTests(APITestCase):

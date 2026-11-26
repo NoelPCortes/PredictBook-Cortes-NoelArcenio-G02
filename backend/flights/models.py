@@ -12,7 +12,10 @@ TOTAL_SEATS_VALIDATORS = (
 
 
 class Airport(models.Model):
-    code = models.CharField(max_length=3, unique=True)
+    code = models.CharField(
+        max_length=3, unique=True,
+        validators=[RegexValidator(r"\A[A-Z]{3}\Z", "Use exactly 3 uppercase letters.")],
+    )
     name = models.CharField(max_length=150)
     city = models.CharField(max_length=100)
     country = models.CharField(max_length=100)
@@ -20,13 +23,13 @@ class Airport(models.Model):
 
 class Airline(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    code = models.CharField(max_length=10, unique=True)
+    code = models.CharField(max_length=10, unique=True, validators=[FLIGHT_NUMBER_VALIDATOR])
 
 
 class Flight(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     airline = models.ForeignKey(Airline, on_delete=models.PROTECT)
-    flight_number = models.CharField(max_length=10)
+    flight_number = models.CharField(max_length=10, validators=[FLIGHT_NUMBER_VALIDATOR])
     origin = models.ForeignKey(
         Airport,
         on_delete=models.PROTECT,
@@ -39,7 +42,7 @@ class Flight(models.Model):
     )
     departure_time = models.DateTimeField()
     arrival_time = models.DateTimeField()
-    total_seats = models.PositiveIntegerField()
+    total_seats = models.PositiveIntegerField(validators=TOTAL_SEATS_VALIDATORS)
     available_seats = models.PositiveIntegerField()
 
     class Meta:
