@@ -4,6 +4,7 @@ from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from config.pagination import ListPagination
 from flights.models import Flight
@@ -57,6 +58,10 @@ class SigninView(generics.GenericAPIView):
                 "profile": ProfileSerializer(result["user"]).data,
             }
         )
+
+
+class RefreshView(TokenRefreshView):
+    permission_classes = (AllowAny,)
 
 
 class LogoutView(generics.GenericAPIView):
