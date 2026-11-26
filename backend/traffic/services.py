@@ -1,10 +1,11 @@
 from django.db import IntegrityError, transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from flights.models import Airport
 
-from .calculation import CALCULATED_SOURCES
+from .calculation import CALCULATED_SOURCES, recalculate_forecasts
 from .models import CrowdForecast
 
 
@@ -23,13 +24,14 @@ def save_forecast(serializer, **kwargs):
                 .order_by("pk")
             )
             if serializer.instance:
-                current = (
-                    CrowdForecast.objects.select_for_update()
-                    .filter(pk=serializer.instance.pk)
-                    .first()
+                serializer.instance = get_object_or_404(
+                    CrowdForecast.objects.select_for_update(), pk=serializer.instance.pk
                 )
-                if current and current.data_source in CALCULATED_SOURCES:
-                    raise PermissionDenied("Calculated forecasts are read-only.")
+                if serializer.instance.data_source in CALCULATED_SOURCES:
+                    serializer.validate_calculated_location(serializer.validated_data)
+                    kwargs["data_source"] = "Staff entry"
+                elif not serializer.instance.data_source and "data_source" not in serializer.validated_data:
+                    kwargs["data_source"] = "Staff entry"
             return serializer.save(calculated_at=timezone.now(), **kwargs)
     except IntegrityError as error:
         constraint = getattr(
@@ -40,3 +42,16 @@ def save_forecast(serializer, **kwargs):
                 {"date": ["A forecast already exists for this airport and date."]}
             ) from None
         raise
+
+
+@transaction.atomic
+def delete_forecast(forecast, actor):
+    get_object_or_404(Airport.objects.select_for_update(), pk=forecast.airport_id)
+    current = get_object_or_404(
+        CrowdForecast.objects.select_for_update(), pk=forecast.pk, airport_id=forecast.airport_id
+    )
+    if current.data_source in CALCULATED_SOURCES:
+        raise PermissionDenied("Calculated forecasts cannot be deleted.")
+    pair = (current.airport_id, current.date)
+    current.delete()
+    recalculate_forecasts(actor, {pair})

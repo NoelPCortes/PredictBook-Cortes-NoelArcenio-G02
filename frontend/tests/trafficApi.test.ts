@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest'
 import { getOwnRecordCounts } from '../src/features/staff-dashboard/api'
+import { loadForecastFlights } from '../src/features/calendar/api'
 import { loadFlights, loadForecasts } from '../src/api/traffic'
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
@@ -36,4 +37,12 @@ it('rejects an obsolete unpaginated response instead of showing unfiltered fligh
   await expect(loadFlights({ origin: '2', destination: '3', upcoming: true })).rejects.toMatchObject({
     fields: { detail: expect.stringContaining('Restart the backend') },
   })
+})
+
+it('requests four flights for the forecast airport and date', async () => {
+  vi.stubEnv('VITE_API_URL', 'https://api.example.test')
+  const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"count":0,"results":[],"next":null,"previous":null}'))
+  vi.stubGlobal('fetch', fetchMock)
+  await loadForecastFlights(2, '2026-12-01', 2)
+  expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.example.test/api/flights/?airport=2&date=2026-12-01&page=2&page_size=4')
 })
