@@ -136,10 +136,10 @@ class ForecastPermissionsTests(APITestCase):
             raise RuntimeError("Recalculation failed")
 
         with (
+            self.assertLogs("config.errors", level="ERROR"),
             patch("traffic.services.recalculate_forecasts", side_effect=recalculate_then_fail),
-            self.assertRaisesRegex(RuntimeError, "Recalculation failed"),
         ):
-            self.client.delete(self.url)
+            self.assertEqual(self.client.delete(self.url).status_code, 500)
         self.assertEqual(list(CrowdForecast.objects.values_list("pk", flat=True)), [self.forecast.pk])
 
     def test_forecast_permissions_flags_follow_role_and_source(self):

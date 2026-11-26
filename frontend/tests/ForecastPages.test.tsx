@@ -154,6 +154,13 @@ it('handles lookup errors', async () => {
   await render('/staff/forecasts/new')
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('Unable to load the forecast form')
 })
+it('shows Forecast not found with a return link and no form', async () => {
+  vi.mocked(getForecast).mockRejectedValueOnce(new ApiError(404, { detail: 'Not found.' }))
+  await render('/staff/forecasts/999/edit')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Forecast not found.')
+  expect(container.querySelector('main a[href="/staff/forecasts"]')?.textContent).toBe('Back to forecasts')
+  expect(container.querySelector('form')).toBeNull()
+})
 it.each(['/staff/forecasts', '/staff/forecasts/new', '/staff/forecasts/7/edit'])('guards Traveler access to %s', async path => {
   setProfile({ id: 1, username: 'traveler', email: 'traveler@example.com', role: 'traveler', first_name: '', last_name: '' })
   await render(path); expect(container.textContent).toContain('Traveler home')

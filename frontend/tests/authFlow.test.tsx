@@ -7,6 +7,7 @@ import { AppRoutes } from '../src/App'
 import { clearSession, setProfile } from '../src/api/authState'
 import { readTokens, writeTokens } from '../src/api/authStorage'
 import { ApiError, apiRequest } from '../src/api/client'
+import ErrorBoundary from '../src/components/ErrorBoundary'
 import { signup } from '../src/features/signup/api'
 import { logout } from '../src/features/homepage/api'
 
@@ -83,6 +84,35 @@ function validSignup() {
   input('password', 'Test-flow-password-927!')
   input('confirmPassword', 'Test-flow-password-927!')
 }
+
+it('shows a Sign in link on an unknown signed-out URL', async () => {
+  await render('/unknown-page')
+  expect(container.querySelector('h1')?.textContent).toBe('Page not found')
+  expect(container.querySelector('main a')?.getAttribute('href')).toBe('/signin')
+})
+
+it.each([['traveler', '/home'], ['staff', '/staff/dashboard'], ['head', '/head']])(
+  'links unknown URLs back to the %s landing page', async (role, path) => {
+    writeTokens(tokens)
+    fetchMock.mockResolvedValueOnce(response({ ...profile, role }))
+    await render('/unknown-page')
+    expect(container.querySelector('h1')?.textContent).toBe('Page not found')
+    expect(container.querySelector('main a')?.getAttribute('href')).toBe(path)
+  },
+)
+
+it('shows a reload action and hides exception details after a render error', async () => {
+  function FailingComponent(): never { throw new Error('Private render diagnostics') }
+  const reactLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await act(async () => root.render(<ErrorBoundary><FailingComponent /></ErrorBoundary>))
+    expect(container.querySelector('h1')?.textContent).toBe('Something went wrong')
+    expect(container.querySelector('button')?.textContent).toBe('Reload page')
+    expect(container.textContent).not.toContain('Private render diagnostics')
+  } finally {
+    reactLog.mockRestore()
+  }
+})
 
 describe('connected account flows', () => {
   it('submits only allowed signup fields and navigates to sign in', async () => {

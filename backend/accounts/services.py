@@ -2,12 +2,12 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import update_last_login
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import (
     AuthenticationFailed,
     PermissionDenied,
     ValidationError,
 )
+from rest_framework.generics import get_object_or_404
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import StaffAssignment, User

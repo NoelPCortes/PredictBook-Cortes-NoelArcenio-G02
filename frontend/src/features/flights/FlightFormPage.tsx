@@ -29,25 +29,31 @@ function FlightForm({ id }: { id?: string }) {
   const [airports, setAirports] = useState<Airport[]>([])
   const [airlines, setAirlines] = useState<Airline[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
+  const [loadError, setLoadError] = useState<'not-found' | 'unavailable' | null>(null)
   const [canEdit, setCanEdit] = useState(!id)
   const [isSaving, setIsSaving] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const { formRef, errors, formError, clearErrors, showErrors } = useRecordErrors(FIELD_NAMES)
   useEffect(() => {
     let isActive = true
-    void Promise.all([loadFlightOptions(), id ? getFlight(id) : Promise.resolve(null)])
+    const flightRequest = id ? getFlight(id).catch(error => {
+      if (error instanceof ApiError && error.status === 404) return null
+      throw error
+    }) : Promise.resolve(null)
+    void Promise.all([loadFlightOptions(), flightRequest])
       .then(([[airportOptions, airlineOptions], flight]) => {
         if (!isActive) return
+        if (id && !flight) {
+          setLoadError('not-found')
+          return
+        }
         setAirports(airportOptions); setAirlines(airlineOptions)
         if (flight) {
           const initialValues = inputValues(flight)
           setValues(initialValues); setOriginalValues(initialValues); setCanEdit(flight.can_edit === true)
         }
       })
-      .catch(error => {
-        if (isActive) setLoadError(error instanceof ApiError && error.status === 404 ? 'Flight not found.' : 'Unable to load the flight form. Please try again.')
-      })
+      .catch(() => { if (isActive) setLoadError('unavailable') })
       .finally(() => { if (isActive) setIsLoading(false) })
     return () => { isActive = false }
   }, [id, attempt])
@@ -76,7 +82,8 @@ function FlightForm({ id }: { id?: string }) {
     <h1>{id ? 'Edit flight' : 'Add flight'}</h1>
     <p>Enter flight dates and times in Philippine time (Asia/Manila, UTC+08:00).</p>
     {isLoading && <p role="status">Loading flight form…</p>}
-    {loadError && <><RecordAlert kind="error">{loadError}</RecordAlert><button className="record-button record-secondary" onClick={() => { setLoadError(''); setIsLoading(true); setAttempt(value => value + 1) }}>Try again</button></>}
+    {loadError === 'not-found' && <><RecordAlert kind="error">Flight not found.</RecordAlert><div><Link className="record-button record-secondary" to="/staff/flights">Back to flights</Link></div></>}
+    {loadError === 'unavailable' && <><RecordAlert kind="error">Unable to load the flight form. Please try again.</RecordAlert><div><button type="button" className="record-button record-secondary" onClick={() => { setLoadError(null); setIsLoading(true); setAttempt(value => value + 1) }}>Try again</button></div></>}
     {!isLoading && !loadError && !canEdit && <RecordAlert kind="error">You do not have permission to edit this flight.</RecordAlert>}
     {!isLoading && !loadError && canEdit && <form ref={formRef} className="record-form" onSubmit={submit} noValidate>
       {formError && <RecordAlert kind="error">{formError}</RecordAlert>}

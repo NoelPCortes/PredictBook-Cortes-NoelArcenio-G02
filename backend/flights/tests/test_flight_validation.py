@@ -70,3 +70,25 @@ class FlightValidationTests(APITestCase):
         response = self.client.post("/api/flights/", self.payload)
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["flight_number"], ["This airline, flight number, and departure time already exist."])
+
+    def test_unknown_flight_id_returns_json_404(self):
+        for flight_id in (99999, 10**30):
+            with self.subTest(flight_id=flight_id):
+                response = self.client.get(f"/api/flights/{flight_id}/", HTTP_ACCEPT="text/html")
+                self.assertEqual(response.status_code, 404)
+                self.assertIn("detail", response.json())
+
+    def test_calendar_date_boundaries_return_field_errors_instead_of_server_errors(self):
+        for field in ("date", "departure_date", "arrival_date"):
+            with self.subTest(field=field):
+                response = self.client.get("/api/flights/", {field: "9999-12-31"})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(field, response.data)
+        response = self.client.get("/api/flights/route-dates/", {
+            "month": "9999-12", "origin": self.origin.pk, "destination": self.destination.pk,
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("month", response.data)
+        response = self.client.post("/api/flights/", {**self.payload, "arrival_time": "9999-12-31T12:00:00Z"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("arrival_time", response.data)

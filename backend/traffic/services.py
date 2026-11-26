@@ -1,7 +1,7 @@
 from django.db import IntegrityError, transaction
-from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.generics import get_object_or_404
 
 from flights.models import Airport
 

@@ -234,15 +234,12 @@ def test_deleting_a_flight_preserves_manual_forecast(scenario):
 
 def test_recalculation_failure_rolls_back_flight_change(scenario):
     flight = make_flight(scenario)
-    with (
-        patch(
-            "flights.services.recalculate_forecasts", side_effect=RuntimeError("Failed")
-        ),
-        pytest.raises(RuntimeError),
-    ):
-        client_for(scenario[0]).patch(
+    with patch("flights.services.recalculate_forecasts", side_effect=RuntimeError("Failed")):
+        response = client_for(scenario[0]).patch(
             f"/api/flights/{flight.pk}/", {"available_seats": 0}, format="json"
         )
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Something went wrong."}
     flight.refresh_from_db()
     assert flight.available_seats == 50
 
