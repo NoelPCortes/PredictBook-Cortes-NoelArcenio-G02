@@ -1,5 +1,5 @@
 .profile-page { --signin-error: var(--error-text); display: grid; grid-template-columns: var(--account-sidebar-width) minmax(0, 1fr); min-height: 100vh; }
-.profile-sidebar { background: var(--ink); padding: var(--space-32) var(--space-16); display: flex; flex-direction: column; gap: var(--space-40); color: var(--white); }
+.profile-sidebar { position: sticky; inset-block-start: 0; align-self: start; block-size: 100dvh; z-index: 1; background: var(--ink); padding: var(--space-32) var(--space-16); display: flex; flex-direction: column; gap: var(--space-40); color: var(--white); }
 .profile-sidebar .brand { font-size: var(--staff-section-size); gap: var(--space-8); }
 .profile-sidebar nav { display: grid; gap: var(--space-8); }
 .profile-sidebar nav p { margin: var(--space-24) var(--space-16) var(--space-8); color: var(--nav-text); text-transform: uppercase; font-size: var(--staff-label-size); font-weight: 600; }
@@ -7,7 +7,7 @@
 .profile-sidebar nav a[aria-current] { background: var(--accent); color: var(--white); font-weight: 600; }
 .profile-sidebar nav a:hover, .profile-sidebar button:hover { background: var(--action-pressed); color: var(--white); text-decoration: none; }
 .profile-sidebar nav a:active, .profile-sidebar button:active { background: var(--action-hover); }
-.profile-sidebar button { margin-top: auto; background: transparent; border: 1px solid var(--border); text-align: left; cursor: pointer; }
+.profile-sidebar button { margin-block-start: auto; align-self: flex-start; background: transparent; border: 1px solid var(--border); text-align: left; cursor: pointer; }
 .profile-sidebar button:disabled { background: var(--disabled-bg); color: var(--disabled-text); cursor: not-allowed; transform: none; }
 .profile-sidebar :focus-visible { outline-color: var(--white); }
 .profile-content { padding: var(--space-40); display: grid; align-content: start; gap: var(--space-24); }
@@ -35,5 +35,15 @@
 .user-chip.account-link:hover { background: var(--action-pressed); text-decoration: none; }
 .user-chip.account-link:active { background: var(--action-hover); }
 @media (max-width: 1000px) { .profile-information-layout, .profile-password-layout { grid-template-columns: 1fr; } .profile-avatar { border-right: 0; padding-right: 0; } .profile-content { padding: var(--space-24); } }
-@media (max-width: 700px) { .profile-page { grid-template-columns: 1fr; } .profile-sidebar { gap: var(--space-24); } .profile-content { padding: var(--space-24) var(--space-16); } }
+@media (max-width: 700px) {
+  .profile-page { display: block; }
+  .profile-sidebar { block-size: auto; gap: var(--space-8); padding-block: var(--space-12); }
+  .profile-sidebar nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .profile-sidebar nav p { margin: 0; align-self: center; }
+  .profile-content { padding: var(--space-24) var(--space-16); }
+  .profile-card { scroll-margin-block-start: var(--profile-sidebar-height, 0px); }
+}
+@media (min-width: 701px) and (max-height: 600px) {
+  .profile-sidebar { gap: var(--space-8); padding-block: var(--space-16); }
+}
 @media (prefers-reduced-motion: reduce) { .profile-sidebar nav a, .profile-sidebar button, .profile-action { transition: none; } }

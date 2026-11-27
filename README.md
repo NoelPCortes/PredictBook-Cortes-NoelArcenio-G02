@@ -21,7 +21,7 @@ For the problem, users, features, scope, and success criteria, see [PRODUCT.md](
 | Layer | Technology |
 |---|---|
 | Frontend | React + TypeScript (Vite), Vitest |
-| Linting and formatting (frontend) | ESLint with typescript-eslint, Prettier |
+| Linting and formatting (frontend) | Oxlint, Prettier |
 | Backend | Python, Django, Django REST Framework |
 | Linting and testing (backend) | Ruff, pytest-django |
 | Database | PostgreSQL |
@@ -142,10 +142,6 @@ python manage.py createsuperuser
 
 # Run the API
 python manage.py runserver         # http://localhost:8000
-
-# Tests and lint
-python -m pytest
-ruff check .
 ```
 
 For optional **local sample data**, configure `SEED_FLIGHT_NUMBERS` below and
@@ -171,8 +167,29 @@ npm install
 cp .env.example .env               # Windows (cmd): copy .env.example .env
 
 npm run dev                        # http://localhost:5173
-npm test                           # Vitest
-npm run lint                       # ESLint
+```
+
+## Running the tests
+
+From `backend/` with the virtual environment active:
+
+```bash
+python manage.py test
+pytest
+ruff check .
+```
+
+The Django runner discovers the native classes in `accounts/tests/`,
+`flights/tests/`, and `traffic/tests/`. Pytest also runs the legacy function
+suite in `backend/tests/`. Each run uses a separate PostgreSQL test database.
+The configured database user needs permission to create it.
+
+From `frontend/`:
+
+```bash
+npm run lint
+npm test
+npm run build
 ```
 
 ## Accounts API
@@ -184,16 +201,19 @@ tokens last 15 minutes; refresh tokens last 7 days and rotate, blacklisting the
 previous refresh token. Logout blacklists the caller's refresh token; existing
 access tokens expire normally.
 
+The React API uses JWT in the `Authorization` header and sets no authentication
+cookies. DRF has no `SessionAuthentication`, so these API requests do not require
+a CSRF token. Django keeps `CsrfViewMiddleware` active for its session-based admin.
+API writes use POST to create or run account actions, PATCH to update, and DELETE
+to delete. GET, HEAD, and OPTIONS leave application data unchanged.
+
 `accounts.User` is configured before the initial migrations. After running
 `createsuperuser`, sign in to `/admin/` and create or edit an initial Head, set
 `role=head`, and leave `promoted_by` empty. The app's Staff/Head roles do not grant
 Django admin access. No other project models are registered in admin.
 
-Backend tests run against Django's separate PostgreSQL test database (the database
-user needs permission to create it). They cover accounts, role permissions, and
-schema constraints. They do not switch to SQLite. React Sign-Up and Sign-In now
-use the existing API. Home is protected and displays the signed-in username;
-its calendar reads airport forecasts and flights from the API. Home searches
+React Sign-Up and Sign-In use the accounts API. Home is protected and displays
+the signed-in username. Its calendar reads airport forecasts and flights from the API. Home searches
 From/To routes and stores only the last five route pairs in browser storage per
 user, with Clear. Your upcoming booking summarizes a saved route with upcoming
 flights; there is no booking table or passenger data.
@@ -201,6 +221,15 @@ Sign out blacklists the refresh token and clears the local session even if the
 request fails. Tokens are stored in localStorage only through the shared auth
 storage module. A 401 causes one refresh attempt, then a single retry; failed
 refresh clears the session and redirects to Sign-In.
+
+## Error handling
+
+With `DEBUG=False`, Django returns generic JSON for unmatched `/api/` URLs and
+plain HTML for framework-handled errors elsewhere. DRF preserves field and detail
+errors and logs unexpected exceptions server-side while returning
+`{"detail": "Something went wrong."}` with status 500. The React app shows a
+role-aware 404 page and a reload action after a render failure. Missing Staff edit
+records show the relevant not-found message and a link back to the list.
 
 ## Account areas
 
@@ -251,16 +280,18 @@ screens remain unbuilt. See [accounts](docs/features/accounts.md) and
 
 ## Flight and crowd forecast management
 
-Staff and Heads can create, view, update, and delete flights and crowd forecasts.
-Staff can change their own flights and manual forecasts; Heads can change any
-flight or manual forecast. Automatically calculated forecasts are read-only
-through the API and UI, including for Heads. PostgreSQL
+Staff and Heads can create flights and manual forecasts. Staff can change their
+own flights and Heads can change any flight. Both roles can edit any forecast.
+Editing a calculated forecast converts it to `Staff entry`, preserves its airport,
+date, and creator, and refreshes its timestamp. Both roles can delete manual
+forecasts. Deleting a manual forecast recalculates its date and airport in the
+same transaction. PostgreSQL
 stores a required, protected creator relationship for both record types. The
 server sets ownership and forecast calculation timestamps; clients cannot send
 those fields. Travelers read the data without creator information. Other users'
 email addresses are never included in these responses.
 
-Run `python manage.py migrate` from `backend/` to apply the ownership migrations.
+Run `python manage.py migrate` from `backend/` to apply the ownership and hardening migrations.
 The local tables were empty when these migrations were introduced. If adopting
 them with existing flight or forecast rows, obtain an approved ownership backfill
 before applying the required fields; do not invent a default owner.
@@ -272,7 +303,7 @@ before applying the required fields; do not invent a default owner.
 | `/staff/flights/:id/edit` | Staff owner or Head flight editing |
 | `/staff/forecasts` | Staff/Head forecast table |
 | `/staff/forecasts/new` | Staff/Head forecast creation |
-| `/staff/forecasts/:id/edit` | Staff owner or Head forecast editing |
+| `/staff/forecasts/:id/edit` | Staff or Head forecast editing |
 | `/calendar` | Traveler airport calendar and selected-day flights |
 
 Home and Traffic Calendar share the same airport dropdown, month grid, crowd
@@ -311,7 +342,8 @@ the creator. Subsequent calculations keep that owner. Commands use the seed Staf
 user named by `SEED_STAFF_USERNAME`. Every other source except these two calculated
 labels and the legacy exact `Sample data` marker is manual and is never overwritten or deleted by calculation.
 Forecast responses include live flight_count, seats_total, and seats_booked;
-calculated rows have is_calculated=true, created_by_username=null, and can_edit=false.
+calculated rows have `is_calculated=true` and `created_by_username=null`. Staff
+and Heads receive `can_edit=true` on every row and `can_delete=true` on manual rows.
 
 Run from `backend/` with the existing seed Staff user:
 
@@ -330,7 +362,8 @@ Neither command is evidence that invented sample flight schedules are real.
 using project-local dates. Existing origin/date filtering keeps its Philippine
 departure-date behavior. Flight entry and time display remain Philippine time.
 The forecast table links to `/staff/flights?airport=<id>&date=<date>` and the
-flight list provides a removable filter notice.
+flight list provides a removable filter notice. Show flights opens the same
+airport/date results in the forecast table, four at a time.
 
 Staff/Head summary: `GET /api/dashboard/summary/?airport=<id>`. With airport
 omitted, it selects the first airport by code with a forecast in the next 30 days,
@@ -351,7 +384,7 @@ Staff makes the account a Traveler; pending removal deletes only its assignment.
 
 ```env
 SECRET_KEY=change-me-to-a-long-random-string
-DEBUG=True
+DEBUG=False
 ALLOWED_HOSTS=localhost,127.0.0.1
 
 DB_NAME=PredictBook
@@ -529,10 +562,13 @@ print('Historical records:', HistoricalRecord.objects.count())
    `python manage.py seed_sample_data` ten-flight command is unchanged and is an
    alternative small fixture, not a required step after this large import.
 
-Traffic Calendar now reads GET /api/traffic/explanation/ and
+Traffic Calendar reads GET /api/traffic/explanation/ and
 GET /api/traffic/recommendations/ with airport/date query parameters. Why this
-level shows real flight/history numbers and history dates; Recommended best date
-to travel ranks up to three qualifying dates within seven days either side.
+level shows recorded flight and history numbers. Recommendations use Manila
+departure dates and list up to three Low or Medium dates with future flights and
+open seats within seven days either side. The selected date shows full, departed,
+or no-flight status when applicable. An empty window beyond the schedule shows
+the last departure date for the airport or booking route.
 Home shows neither section. Staff Dashboard's existing summary includes a
 2026 flights vs 2025 history comparison, with explicit missing-history states.
 See [traffic calendar](docs/features/traffic-calendar.md),
@@ -559,9 +595,9 @@ row and use count, while lookup pickers load their small lookup collections.
 
 Home's route results use origin/destination/upcoming filters. Route highlighting
 reads GET /api/flights/route-dates/?origin=<id>&destination=<id>&month=YYYY-MM.
-Calendar recommendations now appear below the airport/airline pickers and above
-the month grid. Airline changes only its flight list. Forecast/route dates remain
-UTC; flight timestamps still display in Philippine time. Staff Flights exposes
+Calendar recommendations sit beside the month grid and selected-date details.
+Airline changes only the flight list. Forecast and route-highlight dates remain
+UTC. Recommendations and flight timestamps use Philippine time. Staff Flights exposes
 search and filters; Staff Crowd forecasts opens with airports before records.
 See [flight search](docs/features/flight-search.md),
 [dashboard](docs/features/staff-dashboard.md), and

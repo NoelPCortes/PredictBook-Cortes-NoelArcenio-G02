@@ -15,8 +15,9 @@ export type RecommendationFlight = { airline_name: string; airline_code: string;
 export type DateRecommendations = {
   route: { origin_code: string; destination_code: string } | null
   selected: { date: string; has_data: boolean; crowd_score: number | null; crowd_level: CrowdLevel | null }
+  selected_status: { state: 'bookable' | 'full' | 'departed' | 'no_flights'; message: string }
   recommendations: {
-    date: string; weekday: string; crowd_level: CrowdLevel; crowd_score: number; score_difference: number | null
+    date: string; weekday: string; crowd_level: 'low' | 'medium'; crowd_score: number; score_difference: number | null
     flights: RecommendationFlight[]; open_seats: number; flight_count: number; history_average_occupancy_percent: number | null; reasons: string[]
   }[]
   message: string

@@ -5,22 +5,33 @@
 The Django project lives in `backend/config/`. Settings load the local environment
 through python-dotenv and use PostgreSQL. Credentials remain local. Accounts,
 flights, traffic, Django admin, DRF, and SimpleJWT token blacklisting are configured.
-Django's `TIME_ZONE` remains `UTC` and `USE_TZ=True`.
+Django's `TIME_ZONE` remains `UTC` and `USE_TZ=True`. `SECRET_KEY` is required,
+`DEBUG` defaults to false, and `ALLOWED_HOSTS` comes from the local environment.
 
 Accounts retain their existing sign-up, username/email sign-in, rotating JWT
 refresh, logout, self-profile, password, and Head management behavior. See
 [accounts](features/accounts.md) for the existing contract. `/api/dashboard/`
 continues as a legacy Staff/Head access probe. Displayed dashboard data comes
-from the new authenticated summary endpoint.
+from the authenticated summary endpoint.
+
+DRF defaults to `JWTAuthentication` and `IsAuthenticated`. Sign-up, sign-in, and
+token refresh are the three public routes. The API uses the Authorization header
+and issues no authentication cookies. Django's session-based admin retains CSRF
+protection. GET, HEAD, and OPTIONS leave application records unchanged.
+
+With debug off, `config/errors.py` returns JSON for Django-handled `/api/` errors
+and small plain HTML pages elsewhere. Unknown numeric and nonnumeric API record
+paths return JSON 404. The DRF handler keeps validation fields and error detail
+messages, logs unexpected exceptions on the server, and sends generic JSON 500.
 
 ## Flight and crowd forecast API
 
 `config/urls.py` includes `flights.urls` at `/api/flights/` and `traffic.urls` at
 `/api/traffic/`. Requests use the existing JWT bearer authentication. Signed-out
 requests return 401. Every signed-in role can read. Travelers receive 403 on
-writes. Staff and Heads can create records. Staff can update/delete only their
-own flights/manual forecasts; Heads can update/delete any flight or manual
-forecast. Calculated forecasts are read-only for every role. Current database roles apply on
+writes. Staff and Heads can create records. Staff can update or delete their own
+flights and Heads can update or delete any flight. Both can edit any forecast
+and delete manual forecasts. Current database roles apply on
 every request, including when the caller's token predates a role change.
 
 | Method | Endpoint | Behavior |
@@ -67,18 +78,28 @@ optional `data_source`. Responses also include `id` and `calculated_at`. The
 server sets `calculated_at` to the current time on create and update. Blank or
 omitted sources on creation become `Staff entry`; updates retain an existing
 source unless a replacement is supplied, normalizing blank sources the same way.
+When a calculated row is edited, the server sets `Staff entry` and preserves its
+airport, date, and creator. Changes to its airport or date return a field-level
+400. Deletion of a calculated row returns 403.
 
 Both models have required `created_by` foreign keys to the custom user model with
 `on_delete=PROTECT`. The server sets ownership; clients cannot reassign it.
 Requests containing `created_by`, or forecast `calculated_at`, return field-level
-400 messages. The calculated source is reserved for the calculation service. Staff/Head responses include `created_by_username` and a
-server-computed `can_edit`. Traveler responses omit both. Creator IDs and other
-users' email addresses are not returned.
+400 messages. The calculated labels are reserved for the calculation service.
+Staff and Head responses include `created_by_username` and `can_edit`. Forecast
+responses also include `can_delete`, which is true for manual forecasts. Traveler
+responses omit creator names and write flags. Creator IDs and other users' email
+addresses are not returned.
 
 Serializers enforce the [database rules](database.md), including partial updates.
-Flight route, time, seat range, and duplicate constraints return field-level 400
-errors. Forecasts accept only low/medium/high and one airport/date record.
-Duplicate forecasts return a `date` error. Save services translate PostgreSQL
+Flight numbers are trimmed and uppercased before validating two to ten letters
+or digits. Total seats must be an integer from 1 to 1000. Available seats must be
+an integer between zero and total seats. Changing a departure into the past or
+creating a flight with a past departure returns a field-level 400. Other fields
+of an existing past flight remain editable when otherwise permitted. Route, time,
+seat, and duplicate errors return field-level 400 responses. Forecasts accept
+Low, Medium, or High and an optional score from 0 to 100. Duplicate airport/date
+forecasts return a `date` error. Save services translate PostgreSQL
 constraint races for the documented constraints into field-level 400 responses.
 Create returns 201, successful PATCH returns 200, and DELETE returns 204.
 
@@ -107,8 +128,8 @@ Its optional --remove-sample-data flag deletes only exact Sample data forecast
 rows. It reports created, updated, deleted, manual skipped, and sample deleted
 counts. Manual records are preserved. No new migration or dependency is required.
 
-Run `python -m pytest` and `ruff check .` from `backend/`. Tests use Django's
-separate PostgreSQL test database and cover Standard Features, ownership,
+Run `python manage.py test`, `pytest`, and `ruff check .` from `backend/`. Tests use
+a separate PostgreSQL test database and cover Standard Features, ownership,
 permissions, privacy, server-managed fields, documented validation, filters,
 constraint races, and seed idempotence. They do not prove browser integration.
 
@@ -137,18 +158,19 @@ No flights/zero seats gives no calculated row. See
 The first triggering user owns a new calculated row. Later recalculations keep
 that owner. Manual rows (sources other than exact Calculated from 2026 flights and 2025 history,
 legacy Calculated from flights, or Sample data) always win. Both calculated labels
-are read-only; recalculation upgrades legacy labels and preserves the creator. Explicit flight save/delete services recalculate old/new
+are recognized by both write rules and recalculation. Recalculation upgrades
+legacy labels and preserves the creator. Explicit flight save/delete services recalculate old/new
 pairs atomically with the flight mutation, without signals. Airport locks
 coordinate flight changes, recalculations and manual saves. Empty pairs delete
-only calculated rows. A failed calculation rolls back the flight change.
+only calculated rows. Removing a manual forecast recalculates its pair in the
+same transaction. A failed calculation rolls back the flight change or deletion.
 
 Forecast reads add is_calculated and live flight_count, seats_total, seats_booked.
 Two grouped aggregate queries cover a list of any size; the query-count guard
-expects four forecast-data queries with authentication already resolved, including the page count. Calculated
-rows return can_edit=false and created_by_username=null to Staff/Heads. Travelers
-continue to omit creator information. Calculated detail writes return 403 for
-Staff and Heads; attempts to create the reserved source return field-level 400.
-
+expects four forecast-data queries with authentication already resolved,
+including the page count. Flight lists use two queries, one for the count and
+one for the page with the related airline, airports, and creator. Forecasts join
+their airport and creator and load flight totals in two grouped queries.
 ## Real dashboard and limited Head list
 
 GET /api/dashboard/summary/?airport=<id> admits Staff/Heads only. Its optional
@@ -211,7 +233,7 @@ rounded for display only; the blend uses unrounded values. No flights/zero seats
 returns 200 with has_data=false and null score/level. Manual records are preserved;
 this endpoint explains the computed blend independently of their stored levels.
 
-Recommendations return selected {date,has_data,crowd_score,crowd_level},
+Recommendations return selected {date,has_data,crowd_score,crowd_level}, selected_status {state,message},
 recommendations [{date,weekday,crowd_level,crowd_score,score_difference,open_seats,
 flight_count,history_average_occupancy_percent,reasons,flights}], route and message.
 Optional destination=<airport id> restricts qualifying departures to that route;
@@ -219,15 +241,17 @@ equal airport/destination is 400 and an unknown destination is 404. route is
 {origin_code,destination_code} or null. flights contains up to two positive-seat
 qualifying departures in time/id order, each with airline_name, airline_code,
 flight_number, origin_code, destination_code, departure_time and available_seats.
-Only stored Low dates qualify; no lower-than-selected condition remains. Missing
-manual scores use matching history read-only or are excluded. Counts and open
-seats describe qualifying departures, never arrivals. Score differences can be
-zero or negative; missing selected scores leave them null. Ranking,
+Stored Low and Medium dates qualify when an upcoming Manila departure has open
+seats. Missing manual scores use matching 2025 history without changing the
+forecast. Counts and open seats describe qualifying departures. A missing selected
+score leaves score differences null. The selected status describes the flights for
+that date. Empty windows beyond the schedule report the last departure date. Ranking,
 window, missing/manual-score behavior and exact numerical reason conditions are
 specified in [date suggestions](features/date-suggestions.md). Backend templates
 build all sentences/reasons from measured values; no results are padded.
-Query guards hold explanations at four data queries and recommendations at six (seven with destination lookup),
-with authentication already resolved.
+Query guards hold explanations at four data queries and recommendations with
+results at six (seven with destination lookup), with authentication resolved.
+An empty recommendation window can add a single query for the last departure.
 
 The airport-filtered flight list includes direction=departing or arriving relative
 to that airport, counting origin/departure dates and destination/arrival dates in

@@ -1,18 +1,27 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { clearSession, setProfile } from '../src/api/authState'
 import { ApiError } from '../src/api/client'
 import RoleRoute from '../src/components/RoleRoute'
 import ForecastFormPage from '../src/features/calendar/ForecastFormPage'
 import ForecastListPage from '../src/features/calendar/ForecastListPage'
-import { createForecast, deleteForecast, getForecast, loadForecastAirports, loadForecastList, updateForecast } from '../src/features/calendar/api'
+import { createForecast, deleteForecast, getForecast, loadForecastAirports, loadForecastFlights, loadForecastList, updateForecast } from '../src/features/calendar/api'
+import { records } from '../src/api/pagination'
+import type { Flight } from '../src/types/flights'
 import type { Forecast } from '../src/types/traffic'
 
-vi.mock('../src/features/calendar/api', () => ({ createForecast: vi.fn(), deleteForecast: vi.fn(), updateForecast: vi.fn(), getForecast: vi.fn(), loadForecastAirports: vi.fn(), loadForecastList: vi.fn() }))
-const forecast: Forecast = { id: 7, airport: 1, date: '2026-12-01', crowd_level: 'low', crowd_score: null, is_calculated: false, flight_count: 2, seats_total: 180, seats_booked: 124, calculated_at: '2026-11-16T00:00:00Z', data_source: 'Staff entry', created_by_username: 'staff', can_edit: true }
+vi.mock('../src/features/calendar/api', () => ({ createForecast: vi.fn(), deleteForecast: vi.fn(), updateForecast: vi.fn(), getForecast: vi.fn(), loadForecastAirports: vi.fn(), loadForecastFlights: vi.fn(), loadForecastList: vi.fn() }))
+const forecast: Forecast = { id: 7, airport: 1, date: '2026-12-01', crowd_level: 'low', crowd_score: null, is_calculated: false, flight_count: 2, seats_total: 180, seats_booked: 124, calculated_at: '2026-11-16T00:00:00Z', data_source: 'Staff entry', created_by_username: 'staff', can_edit: true, can_delete: true }
+const calculatedForecast = { ...forecast, is_calculated: true, can_delete: false, created_by_username: null, data_source: 'Calculated from 2026 flights and 2025 history' }
+const flight: Flight = {
+  id: 1, airline: 1, airline_name: 'Cebu Pacific', airline_code: '5J', flight_number: '5J12',
+  origin: 1, origin_code: 'CEB', origin_name: 'Cebu', destination: 2, destination_code: 'MNL', destination_name: 'Manila',
+  departure_time: '2026-12-01T01:30:00Z', arrival_time: '2026-12-01T02:30:00Z',
+  direction: 'departing', total_seats: 100, available_seats: 35,
+}
 const airports = [{ id: 1, code: 'CEB', name: 'Cebu', city: 'Cebu', country: 'Philippines' }]
 let container: HTMLDivElement
 let root: ReturnType<typeof createRoot>
@@ -20,6 +29,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   vi.mocked(loadForecastAirports).mockReset().mockResolvedValue(airports)
   vi.mocked(loadForecastList).mockReset().mockResolvedValue([forecast])
+  vi.mocked(loadForecastFlights).mockReset().mockResolvedValue([])
   vi.mocked(getForecast).mockReset().mockResolvedValue(forecast)
   vi.mocked(createForecast).mockReset().mockResolvedValue(forecast)
   vi.mocked(updateForecast).mockReset().mockResolvedValue(forecast)
@@ -34,6 +44,7 @@ async function render(path = '/staff/forecasts', openAirport = true) {
     <Route path="/staff/forecasts" element={protect(<ForecastListPage />)} />
     <Route path="/staff/forecasts/new" element={protect(<ForecastFormPage />)} />
     <Route path="/staff/forecasts/:id/edit" element={protect(<ForecastFormPage />)} />
+    <Route path="/staff/flights" element={<Link to="/staff/forecasts">Return to forecasts</Link>} />
     <Route path="/home" element={<p>Traveler home</p>} /><Route path="/signin" element={<p>Sign in</p>} />
   </Routes></MemoryRouter>))
   if (openAirport && path === '/staff/forecasts' && container.querySelector('.forecast-airport-list button')) await click('.forecast-airport-list button')
@@ -68,10 +79,10 @@ it('lists airport, date, crowd chip with dot and text, score and author', async 
   expect(container.querySelector('.app-nav-links a[aria-current="page"]')?.textContent).toBe('Crowd forecasts')
   expect(container.querySelector('svg')).toBeNull()
 })
-it('hides edit and delete when can_edit is false', async () => {
-  vi.mocked(loadForecastList).mockResolvedValue([{ ...forecast, can_edit: false }])
+it('hides edit and delete when both permission flags are false', async () => {
+  vi.mocked(loadForecastList).mockResolvedValue([{ ...forecast, can_edit: false, can_delete: false }])
   await render()
-  expect(container.querySelector('tbody a[href$="/edit"], tbody button')).toBeNull()
+  expect(container.querySelector('tbody a[href$="/edit"], tbody .record-danger')).toBeNull()
 })
 it('shows the empty table message', async () => {
   vi.mocked(loadForecastList).mockResolvedValue([]); await render()
@@ -87,19 +98,20 @@ it('permits retry after a failed list request', async () => {
   await act(async () => [...container.querySelectorAll('button')].find(button=>button.textContent==='Try again')!.click()); expect(container.querySelector('table')).not.toBeNull()
 })
 it('cancels deletion and then deletes only after confirmation', async () => {
-  await render(); await click('tbody button')
+  await render(); await click('tbody .record-danger')
   expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain('Delete forecast for CEB — Cebu on 2026-12-01? This cannot be undone.')
   expect(document.activeElement?.textContent).toBe('Cancel')
   await click('[role="alertdialog"] .record-ghost')
   expect(deleteForecast).not.toHaveBeenCalled()
-  await click('tbody button'); await click('[role="alertdialog"] .record-danger')
+  vi.mocked(loadForecastList).mockResolvedValueOnce([])
+  await click('tbody .record-danger'); await click('[role="alertdialog"] .record-danger')
   expect(deleteForecast).toHaveBeenCalledWith(7)
   expect(container.querySelector('[role="status"]')?.textContent).toBe('Forecast deleted.')
   expect(container.textContent).toContain('No forecasts listed yet.')
 })
 it('keeps the row after a failed delete', async () => {
   vi.mocked(deleteForecast).mockRejectedValueOnce(new ApiError(403, { detail: 'Permission denied.' }))
-  await render(); await click('tbody button'); await click('[role="alertdialog"] .record-danger')
+  await render(); await click('tbody .record-danger'); await click('[role="alertdialog"] .record-danger')
   expect(container.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toBe('Permission denied.')
   expect(container.querySelector('tbody')?.textContent).toContain('CEB')
 })
@@ -110,6 +122,17 @@ it('creates from five labeled fields without sending server-managed fields', asy
   await edit('airport', '1'); await edit('date', '2026-12-01'); await edit('crowd_level', 'low'); await submit()
   expect(createForecast).toHaveBeenCalledWith({ airport: '1', date: '2026-12-01', crowd_level: 'low', crowd_score: null, data_source: '' })
   expect(container.querySelector('[role="status"]')?.textContent).toBe('Forecast created.')
+})
+it('ignores repeated submits in the same render while a forecast save is pending', async () => {
+  vi.mocked(updateForecast).mockReturnValueOnce(new Promise(() => {}))
+  await render('/staff/forecasts/7/edit')
+  const form = container.querySelector('form')!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  expect(updateForecast).toHaveBeenCalledOnce()
+  expect(form.getAttribute('aria-busy')).toBe('true')
+  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
 })
 it('updates existing values and preserves optional negative scores without extra rules', async () => {
   await render('/staff/forecasts/7/edit')
@@ -142,6 +165,13 @@ it('handles lookup errors', async () => {
   await render('/staff/forecasts/new')
   expect(container.querySelector('[role="alert"]')?.textContent).toContain('Unable to load the forecast form')
 })
+it('shows Forecast not found with a return link and no form', async () => {
+  vi.mocked(getForecast).mockRejectedValueOnce(new ApiError(404, { detail: 'Not found.' }))
+  await render('/staff/forecasts/999/edit')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Forecast not found.')
+  expect(container.querySelector('main a[href="/staff/forecasts"]')?.textContent).toBe('Back to forecasts')
+  expect(container.querySelector('form')).toBeNull()
+})
 it.each(['/staff/forecasts', '/staff/forecasts/new', '/staff/forecasts/7/edit'])('guards Traveler access to %s', async path => {
   setProfile({ id: 1, username: 'traveler', email: 'traveler@example.com', role: 'traveler', first_name: '', last_name: '' })
   await render(path); expect(container.textContent).toContain('Traveler home')
@@ -153,13 +183,93 @@ it('allows Heads to create forecasts', async () => {
 })
 
 
-it('shows live seats and flight references for read-only calculated rows', async () => {
-  vi.mocked(loadForecastList).mockResolvedValue([{ ...forecast, is_calculated: true, can_edit: false, created_by_username: null }])
+it('shows live seats, flight references and Edit but no Delete for calculated rows', async () => {
+  vi.mocked(loadForecastList).mockResolvedValue([calculatedForecast])
   await render()
   expect(container.querySelector('tbody')?.textContent).toContain('124 of 180 seats, 68.9%')
   expect(container.querySelector('tbody')?.textContent).toContain('Calculated automatically')
   expect(container.querySelector('a[href="/staff/flights?airport=1&date=2026-12-01"]')?.textContent).toBe('View flights')
-  expect(container.querySelector('tbody a[href$="/edit"], tbody button')).toBeNull()
+  expect(container.querySelector('tbody a[href$="/edit"]')?.textContent).toBe('Edit')
+  expect(container.querySelector('tbody .record-danger')).toBeNull()
+})
+
+it('edits calculated forecasts without sending airport, date or source', async () => {
+  vi.mocked(getForecast).mockResolvedValue(calculatedForecast)
+  await render('/staff/forecasts/7/edit')
+  expect(container.querySelector('form')?.textContent).toContain('Calculated automatically')
+  expect(container.querySelector('form time')?.textContent).toBe(forecast.date)
+  expect(field('airport')).toBeNull()
+  expect(field('date')).toBeNull()
+  expect(field('data_source')).toBeNull()
+  await edit('crowd_level', 'high'); await submit()
+  expect(updateForecast).toHaveBeenCalledWith('7', { crowd_level: 'high', crowd_score: null })
+})
+
+it('refetches and shows the calculated replacement after deleting a manual forecast', async () => {
+  await render()
+  vi.mocked(loadForecastList).mockResolvedValueOnce([{ ...calculatedForecast, id: 8 }])
+  await click('tbody .record-danger'); await click('[role="alertdialog"] .record-danger')
+  expect(loadForecastList).toHaveBeenCalledTimes(2)
+  expect(container.querySelector('tbody')?.textContent).toContain('Calculated automatically')
+  expect(container.querySelector('a[href="/staff/forecasts/8/edit"]')).not.toBeNull()
+})
+
+it('refetches airports and forecasts after returning from the flight list', async () => {
+  await render()
+  await click('a[href^="/staff/flights?"]')
+  vi.mocked(loadForecastList).mockResolvedValueOnce([{ ...forecast, seats_booked: 140 }])
+  await click('a[href="/staff/forecasts"]')
+  await click('.forecast-airport-list button')
+  expect(loadForecastAirports).toHaveBeenCalledTimes(2)
+  expect(loadForecastList).toHaveBeenCalledTimes(2)
+  expect(container.querySelector('tbody')?.textContent).toContain('140 of 180 seats')
+})
+
+it('loads and appends four flights per page under the correct forecast row', async () => {
+  const firstPage = Array.from({ length: 4 }, (_, index) => ({ ...flight, id: index + 1 }))
+  vi.mocked(loadForecastFlights)
+    .mockResolvedValueOnce(records({ count: 5, next: 'page-2', previous: null, results: firstPage }))
+    .mockResolvedValueOnce(records({ count: 5, next: null, previous: 'page-1', results: [{ ...flight, id: 5, flight_number: '5J13', direction: 'arriving' }] }))
+  await render()
+  expect(loadForecastFlights).not.toHaveBeenCalled()
+  const toggle = container.querySelector<HTMLButtonElement>('tbody button[aria-expanded]')!
+  const panel = document.getElementById(toggle.getAttribute('aria-controls')!)!
+  expect(toggle.textContent).toBe('Show flights')
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  expect(panel.closest('tr')?.hidden).toBe(true)
+  await act(async () => toggle.click())
+  expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  expect(panel.closest('tr')?.hidden).toBe(false)
+  expect(loadForecastFlights).toHaveBeenNthCalledWith(1, 1, '2026-12-01', 1)
+  expect(panel.querySelectorAll('li')).toHaveLength(4)
+  expect(panel.textContent).toContain('Showing 4 of 5 flights')
+  expect(panel.querySelector('li')?.textContent).toContain('5J12')
+  expect(panel.querySelector('li')?.textContent).toContain('CEB to MNL')
+  expect(panel.querySelector('li')?.textContent).toContain('Departing')
+  expect(panel.querySelector('li')?.textContent).toContain('65 of 100 seats')
+  expect(panel.querySelector('img')?.getAttribute('src')).toContain('ClockIcon')
+  expect(panel.querySelectorAll('li:first-child time')).toHaveLength(2)
+  expect(panel.querySelector('time')?.textContent).toContain('9:30')
+  await act(async () => panel.querySelector('button')!.click())
+  expect(loadForecastFlights).toHaveBeenNthCalledWith(2, 1, '2026-12-01', 2)
+  expect(panel.querySelectorAll('li')).toHaveLength(5)
+  expect(panel.querySelector('li:last-child')?.textContent).toContain('Arriving')
+  expect(panel.textContent).toContain('Showing 5 of 5 flights')
+  await act(async () => toggle.click())
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  expect(panel.closest('tr')?.hidden).toBe(true)
+})
+
+it('shows inline flight loading, request errors, retry and the empty state', async () => {
+  let rejectFlights!: (reason: Error) => void
+  vi.mocked(loadForecastFlights).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFlights = reject }))
+  await render()
+  await click('tbody button[aria-expanded]')
+  expect(container.querySelector('tbody [role="status"]')?.textContent).toBe('Loading flights...')
+  await act(async () => rejectFlights(new TypeError('Offline')))
+  expect(container.querySelector('tbody [role="alert"]')?.textContent).toContain('Unable to load flights')
+  await click('.forecast-flights button')
+  expect(container.querySelector('tbody')?.textContent).toContain('No flights listed for this date.')
 })
 
 it('starts with airports only, opens an airport and returns to the list', async () => {
@@ -169,7 +279,11 @@ it('starts with airports only, opens an airport and returns to the list', async 
   expect(loadForecastList).not.toHaveBeenCalled()
   await click('.forecast-airport-list button')
   expect(loadForecastList).toHaveBeenLastCalledWith({airport:'1',page:1})
-  await act(async () => [...container.querySelectorAll('button')].find(button=>button.textContent==='Back to airports')!.click())
+  const back = container.querySelector<HTMLButtonElement>('.forecast-back')!
+  expect(back.textContent).toBe('Back to airports')
+  expect(back.classList.contains('record-secondary')).toBe(true)
+  expect(back.querySelector('img')?.getAttribute('src')).toContain('chevron-leftIcon')
+  await act(async () => back.click())
   expect(container.querySelector('table')).toBeNull()
 })
 it('searches globally instead of listing airports and supports Clear search', async () => {

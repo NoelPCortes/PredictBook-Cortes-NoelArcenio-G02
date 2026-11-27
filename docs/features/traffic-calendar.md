@@ -24,8 +24,8 @@ No flights listed for this date is shown only for a successful empty response.
 There is no Your bookings row in the calendar. Home's separate cards now summarize
 browser route searches, not stored bookings; its calendar can highlight a route.
 
-Landing and sign-in/sign-up marketing previews retain their separate samples.
-They were not changed. Real recommendations now appear only on /calendar;
+Landing and sign-in/sign-up retain their separate marketing previews. Landing's
+inactive flight search form was removed. Real recommendations appear only on /calendar.
 production datasets and accuracy evaluation remain TBD. The product's 75% accuracy
 target has not been measured by this seat-utilization calculation.
 
@@ -57,13 +57,13 @@ calculation timestamp. Their required creator is the user triggering the first
 calculation; management commands use the configured seed Staff user. Later
 recalculations preserve that original calculated creator.
 
-Legacy Calculated from flights rows are also calculated, read-only, and upgraded
+Legacy Calculated from flights rows are also calculated and upgraded
 on recalculation without changing their creator. Every source except these two
 calculated labels and exact Sample data is manual.
 Manual forecasts, including old blank/null sources, always take precedence and
 are never overwritten or deleted by recalculation. Blank API source input is
-normalized to Staff entry. Manual score/level inputs remain possible under their
-existing validation; the automatic thresholds do not override them.
+normalized to Staff entry. A manual score can be left blank or set from 0 to
+100. The automatic thresholds do not override the manually chosen level.
 
 ## Transactions, permissions and references
 
@@ -73,16 +73,21 @@ origin/departure and destination/arrival pairs. Failure rolls back the flight
 change. If no seats remain, only a calculated row is removed. No signals are used.
 Airport locks serialize flight calculations and manual writes.
 
-All signed-in roles can read forecasts. Staff/Heads can create manual forecasts;
-Staff can edit/delete their own manual records and Heads any manual record.
-Calculated PATCH and DELETE return 403 even for Heads. Client attempts to use the
-reserved calculated source return a field-level 400. Every request still rejects
-client-supplied created_by and calculated_at.
+All signed-in roles can read forecasts. Staff and Heads can create manual
+forecasts, edit any forecast, and delete manual forecasts. Editing a calculated
+forecast changes its source to `Staff entry`, stamps the current time, and keeps
+its creator. A change to the airport or date of a calculated row returns 400.
+Deleting a calculated forecast returns 403. Deleting a manual forecast recalculates
+its pair in the same transaction and restores the calculated row when flights
+supply seat data. Reserved calculated sources and client-supplied `created_by`
+or `calculated_at` return 400.
 
 Forecast responses add is_calculated, flight_count, seats_total and seats_booked.
 The numbers are live aggregates even for manual forecasts. Staff/Head responses
-use created_by_username=null and can_edit=false for calculated rows; the UI shows
-Calculated automatically. Traveler responses omit creator information. Two
+include `can_edit=true` and show `Calculated automatically` for calculated rows,
+which have `created_by_username=null` and `can_delete=false`. Manual rows show
+`Staff entry` and have `can_delete=true`. Traveler responses omit creator
+information and write flags. Two
 aggregate flight queries serve the entire forecast list, rather than querying
 per row; a regression test fixes the nonempty list at four forecast-data queries (count, page and two flight aggregates), with authentication already resolved.
 
@@ -95,7 +100,11 @@ The Staff forecast table shows Airport, Date, Crowd level, Seats booked, Flights
 Source and Actions. Seats booked uses live numbers and their percentage; with
 no counted flights it says No flight data. View flights links to
 `/staff/flights?airport=<id>&date=<date>`, where the filter can be cleared.
-Calculated rows have no Edit/Delete actions, including direct edit navigation.
+Each airport forecast has a Show flights toggle for that same result set. It
+opens four flights at a time, with origin and destination codes, Manila times,
+direction, booked seats, and a count. Staff and Heads can edit every row. Delete
+appears for manual rows and requires confirmation. Missing edit records show
+**Forecast not found.** and a link back to the list.
 
 ## Commands and cleanup
 
@@ -113,7 +122,7 @@ not become real timetables because they feed this calculation.
 
 Backend tests cover threshold boundaries, combined arrivals/departures, timezone
 dates, zero seats, manual protection, original creator retention, idempotence,
-old/new pairs, deletion, rollback, exact-source cleanup, read-only permissions,
+old/new pairs, deletion, rollback, exact-source cleanup, forecast permissions,
 and query count. Frontend tests use mocked API data; live browser layout and the
 complete browser-to-database walkthrough remain unverified.
 
@@ -146,7 +155,7 @@ Raw SQL changes require an explicit recalculate_forecasts run.
 ## Redesigned layout and filters
 
 /calendar has a main column with its month grid, selected-date flights, and
-Why this level, beside a sticky side column with searchable Airport, Airline,
+Why this level, beside a navy panel with searchable Airport, Airline,
 My booking, the airport-level hint, and Recommended best date to travel. On
 narrow screens the visual order is pickers, calendar/panel, recommendations.
 The hint remains: Crowd levels are per airport. The airline filter only changes
@@ -164,9 +173,9 @@ origin/destination on the flight request and destination on recommendations.
 
 The initial selected date is today in UTC. Month navigation selects today when
 returning to its month, otherwise day one. UTC date grouping is intentionally
-shared by forecasts, airport/date flight lists, route highlights and suggestions.
-Flight timestamps and optional Home search dates/hours use Asia/Manila. Labels
-make both zones explicit; TIME_ZONE is unchanged and no data is recalculated.
+shared by forecasts, airport/date flight lists, and route highlights. Flight
+timestamps, recommendations, and optional Home search dates/hours use
+Asia/Manila. The UI labels both zones. The forecast storage timezone remains UTC.
 
 Selected-date flights request page_size=4 and display Showing {shown} of {total}
 flights. See more appends the next four, with loading and retry states, and hides
@@ -174,8 +183,8 @@ when all results are shown. Airport, airline, booking and date changes reset it.
 Delayed responses from an earlier selection cannot append to the reset list.
 Without booking, flights include matching UTC departures and arrivals; with a
 booking, only From-to-To departures on that UTC date. Existing icons and direction
-labels remain. Recommendations use the new Low-only route-aware rule in
-[date suggestions](date-suggestions.md), with real departure previews.
+labels remain. Recommendations use the [route-aware Low and Medium rule](date-suggestions.md)
+with future departure previews and a status message beneath the selected date.
 
 Forecasts remain airport-wide stored levels. /api/traffic/forecasts/ now returns
 {count,next,previous,results}, default/capped page size 50. Additional optional
@@ -190,8 +199,9 @@ include every stored calculated/manual row via one aggregate lookup query; cards
 show No forecasts yet, 1 forecast or {n} forecasts. Missing counts are labeled
 unavailable rather than invented as zero. Selecting
 an airport opens its search, month/level/source filters and paginated table, with
-Back to airports and Add forecast. Global search instead shows results across
+the secondary Back to airports button and Add forecast. Global search shows results across
 all airports; Clear search restores the airport list. No counted flights displays
 No flight data. Otherwise the seats cell shows booked of total and percentage.
-Existing permission-based Edit/Delete, confirmation, success messages and View
-flights links remain. Home never enables recommendations or the breakdown.
+The inline flight list handles loading, retry, pagination, and empty results.
+The forecast view refetches on return from Flights and after a manual deletion.
+Home never enables recommendations or the breakdown.

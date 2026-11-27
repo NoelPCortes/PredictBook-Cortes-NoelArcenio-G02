@@ -18,10 +18,11 @@ import seatIcon from '../assets/icons/SeatIcon.png'
 import './AirportCalendar.css'
 
 export type CalendarSelection = { airport: string; destination?: string; date: string; forecast?: Forecast; onSelectDate: (date: string) => void }
+export type CalendarPanels = { selectedStatus?: ReactNode; recommendations?: ReactNode }
 export type CalendarRoute = { origin: string; destination: string; originCode: string; destinationCode: string }
-type CalendarOptions = { sidebar?: boolean; bookingRoutes?: { origin: string; destination: string }[]; airlineFilter?: boolean; renderBefore?: (selection: CalendarSelection) => ReactNode; route?: CalendarRoute; onClearRoute?: () => void; renderDetails?: (selection: CalendarSelection) => ReactNode; renderAfter?: (selection: CalendarSelection) => ReactNode; showFlightDirections?: boolean }
+type CalendarOptions = { sidebar?: boolean; bookingRoutes?: { origin: string; destination: string }[]; airlineFilter?: boolean; renderSelection?: (selection: CalendarSelection, renderCalendar: (panels: CalendarPanels) => ReactNode) => ReactNode; route?: CalendarRoute; onClearRoute?: () => void; renderDetails?: (selection: CalendarSelection) => ReactNode; renderAfter?: (selection: CalendarSelection) => ReactNode; showFlightDirections?: boolean }
 
-function AirportMonth({ airport, renderDetails, renderAfter, showFlightDirections, route, onClearRoute, renderBefore, airline, sidebar, pickers }: { airport: string; airline?: string; pickers?: ReactNode } & CalendarOptions) {
+function AirportMonth({ airport, renderDetails, renderAfter, showFlightDirections, route, onClearRoute, renderSelection, airline, sidebar, pickers }: { airport: string; airline?: string; pickers?: ReactNode } & CalendarOptions) {
   const routeOrigin = route?.origin
   const routeDestination = route?.destination
   const [routeAttempt, setRouteAttempt] = useState(0)
@@ -46,7 +47,7 @@ function AirportMonth({ airport, renderDetails, renderAfter, showFlightDirection
     setSelectedDate(target === today.slice(0,7) ? today : `${target}-01`)
   }
   const selection = { airport, destination: routeDestination, date: selectedDate, forecast: selectedForecast, onSelectDate: setSelectedDate }
-  const body = <div className={`airport-calendar-layout${route ? ' route-mode' : ''}`}>
+  const body = (selectedStatus?: ReactNode) => <div className={`airport-calendar-layout${route ? ' route-mode' : ''}`}>
     <section className="airport-calendar-month" aria-labelledby={headingId}>
       {route && <><p>Route: {route.originCode} to {route.destinationCode}. Only route dates have crowd colors and a highlight ring.</p><button type="button" className="calendar-text-button" onClick={onClearRoute}>Show all crowd levels</button></>}
       {route && !routeDates.value && !routeDates.error && <p role="status">Loading route dates...</p>}
@@ -74,8 +75,9 @@ function AirportMonth({ airport, renderDetails, renderAfter, showFlightDirection
     </section>
     <section className="airport-date-details" aria-live="polite" aria-atomic="true" aria-label="Selected date details">
       <h3>{calendarDateLabel(selectedDate)}</h3>
+      {selectedStatus}
       {forecasts.value ? <CrowdChip level={selectedForecast?.crowd_level} /> : <p>{forecasts.error ? 'Crowd forecast unavailable.' : 'Loading crowd forecast…'}</p>}
-      <p>Forecast dates: UTC. Calendar flights, route highlights and recommendations use UTC dates.</p><p>{route ? 'Flights depart on the selected UTC date on this route.' : 'Flights include arrivals and departures on the selected UTC date.'}</p>
+      <p>Forecast dates: UTC. Calendar flights and route highlights use UTC dates.{renderSelection && ' Recommendations use Philippine dates.'}</p><p>{route ? 'Flights depart on the selected UTC date on this route.' : 'Flights include arrivals and departures on the selected UTC date.'}</p>
       <p>Flight times: Philippine time (Asia/Manila, UTC+08:00).</p>
       {!flights.value && !flights.error && <p role="status">Loading flights…</p>}
       {flights.error && <><RecordAlert kind="error">Unable to load flights. Please try again.</RecordAlert><button type="button" className="calendar-text-button" onClick={flightPages.result?.page ? flightPages.seeMore : flightPages.retry}>Retry flights</button></>}
@@ -91,11 +93,15 @@ function AirportMonth({ airport, renderDetails, renderAfter, showFlightDirection
       {renderDetails?.(selection)}
     </section>
   </div>
-  return sidebar ? <div className="traffic-calendar-grid">
-    <aside className="traffic-calendar-sidebar traffic-calendar-navy-panel traffic-calendar-controls" aria-label="Calendar filters">{pickers}</aside>
-    <div className="traffic-calendar-main">{body}</div>
-    <aside className="traffic-calendar-sidebar traffic-calendar-navy-panel traffic-calendar-suggestions" aria-label="Recommended travel dates">{renderBefore?.(selection)}</aside>
-  </div> : <>{pickers}{renderBefore?.(selection)}{body}{renderAfter?.(selection)}</>
+  function renderCalendar({ selectedStatus, recommendations }: CalendarPanels = {}) {
+    return sidebar ? <div className="traffic-calendar-grid">
+      <aside className="traffic-calendar-sidebar traffic-calendar-navy-panel traffic-calendar-controls" aria-label="Calendar filters">{pickers}</aside>
+      <div className="traffic-calendar-main">{body(selectedStatus)}</div>
+      <aside className="traffic-calendar-sidebar traffic-calendar-navy-panel traffic-calendar-suggestions" aria-label="Recommended travel dates">{recommendations}</aside>
+    </div> : <>{pickers}{recommendations}{body(selectedStatus)}{renderAfter?.(selection)}</>
+  }
+
+  return renderSelection ? renderSelection(selection, renderCalendar) : renderCalendar()
 }
 
 export default function AirportCalendar(options: CalendarOptions) {

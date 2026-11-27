@@ -12,6 +12,14 @@ import { createFlight, getFlight, listFlights, loadFlightOptions, updateFlight }
 import type { Flight } from '../src/types/flights'
 
 vi.mock('../src/features/flights/api', () => ({ createFlight: vi.fn(), updateFlight: vi.fn(), getFlight: vi.fn(), loadFlightOptions: vi.fn(), listFlights: vi.fn() }))
+
+it('shows Flight not found with a return link and no form', async () => {
+  vi.mocked(getFlight).mockRejectedValueOnce(new ApiError(404, { detail: 'Not found.' }))
+  await render('/staff/flights/999/edit')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Flight not found.')
+  expect(container.querySelector('main a[href="/staff/flights"]')?.textContent).toBe('Back to flights')
+  expect(container.querySelector('form')).toBeNull()
+})
 const flight: Flight = {
   id: 7, airline: 1, airline_name: 'Philippine Airlines', airline_code: 'PR', flight_number: '100',
   origin: 1, origin_code: 'CEB', origin_name: 'Cebu', destination: 2, destination_code: 'MNL', destination_name: 'Manila',
@@ -146,7 +154,11 @@ it('handles loading, failed lookups and retry', async () => {
 })
 it('keeps submit disabled while the save is pending', async () => {
   vi.mocked(createFlight).mockReturnValue(new Promise(() => {}))
-  await render(); await submit(); await submit()
+  await render()
+  const form = container.querySelector('form')!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   expect(createFlight).toHaveBeenCalledOnce()
 })

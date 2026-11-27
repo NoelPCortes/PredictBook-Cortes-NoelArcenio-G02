@@ -1,19 +1,28 @@
-from datetime import date
+from datetime import date, timedelta
 
 from rest_framework import serializers
 
 from accounts.models import User
 from accounts.serializers import StrictFieldsMixin
 from flights.models import Airport
-from flights.permissions import can_edit_record
 
-from .calculation import CALCULATED_SOURCES, flight_totals
-from .models import CrowdForecast
+from .calculation import (
+    CALCULATED_SOURCES,
+    HISTORY_DAY_OFFSETS,
+    RECOMMENDATION_WINDOW,
+    flight_totals,
+)
+from .models import CROWD_SCORE_ERROR, CrowdForecast, validate_crowd_score
 
 
 class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
+    crowd_score = serializers.FloatField(
+        required=False, allow_null=True, validators=[validate_crowd_score],
+        error_messages={"invalid": CROWD_SCORE_ERROR},
+    )
     created_by_username = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
     is_calculated = serializers.SerializerMethodField()
     flight_count = serializers.SerializerMethodField()
     seats_total = serializers.SerializerMethodField()
@@ -31,6 +40,7 @@ class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
             "data_source",
             "created_by_username",
             "can_edit",
+            "can_delete",
             "is_calculated",
             "flight_count",
             "seats_total",
@@ -44,12 +54,14 @@ class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
         if self.context["request"].user.role == User.Role.TRAVELER:
             fields.pop("created_by_username")
             fields.pop("can_edit")
+            fields.pop("can_delete")
         return fields
 
     def get_can_edit(self, obj):
-        return not self.get_is_calculated(obj) and can_edit_record(
-            self.context["request"].user, obj
-        )
+        return self.context["request"].user.role in (User.Role.STAFF, User.Role.HEAD)
+
+    def get_can_delete(self, obj):
+        return self.get_can_edit(obj) and not self.get_is_calculated(obj)
 
     def get_is_calculated(self, obj):
         return obj.data_source in CALCULATED_SOURCES
@@ -82,6 +94,8 @@ class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
                 {"data_source": ["Calculated forecasts are managed automatically."]}
             )
         current = self.instance
+        if current and self.get_is_calculated(current):
+            self.validate_calculated_location(attrs)
         airport = attrs.get("airport", getattr(current, "airport", None))
         forecast_date = attrs.get("date", getattr(current, "date", None))
         duplicates = CrowdForecast.objects.filter(airport=airport, date=forecast_date)
@@ -91,11 +105,18 @@ class ForecastSerializer(StrictFieldsMixin, serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"date": ["A forecast already exists for this airport and date."]}
             )
-        attrs["data_source"] = (
-            attrs.get("data_source", getattr(current, "data_source", None))
-            or "Staff entry"
-        )
+        if "data_source" in attrs or current is None:
+            attrs["data_source"] = attrs.get("data_source") or "Staff entry"
         return attrs
+
+    def validate_calculated_location(self, attrs):
+        errors = {}
+        if "airport" in attrs and attrs["airport"].pk != self.instance.airport_id:
+            errors["airport"] = ["The airport of a calculated forecast cannot be changed."]
+        if "date" in attrs and attrs["date"] != self.instance.date:
+            errors["date"] = ["The date of a calculated forecast cannot be changed."]
+        if errors:
+            raise serializers.ValidationError(errors)
 
 
 class ForecastFilterSerializer(serializers.Serializer):
@@ -120,6 +141,14 @@ class ForecastFilterSerializer(serializers.Serializer):
 class DateInsightFilterSerializer(serializers.Serializer):
     airport = serializers.IntegerField(min_value=1)
     date = serializers.DateField(input_formats=("%Y-%m-%d",))
+
+    def validate_date(self, value):
+        # The insight windows read prior history and use an exclusive end date.
+        first = date.min + timedelta(days=max(HISTORY_DAY_OFFSETS) + RECOMMENDATION_WINDOW)
+        last = date.max - timedelta(days=RECOMMENDATION_WINDOW + 1)
+        if not first <= value <= last:
+            raise serializers.ValidationError("Enter a valid date.")
+        return value
 
 
 class RecommendationFilterSerializer(DateInsightFilterSerializer):

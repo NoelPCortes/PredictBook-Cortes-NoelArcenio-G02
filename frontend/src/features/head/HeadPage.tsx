@@ -5,6 +5,7 @@ import { ApiError, fieldMessage } from '../../api/client'
 import AppNavbar from '../../components/AppNavbar'
 import AuthField from '../../components/AuthField'
 import { useSignOut } from '../../components/useSignOut'
+import { usePendingAction } from '../../components/usePendingAction'
 import { assignStaff, getHeadAccess } from './api'
 import '../../components/AuthLayout.css'
 import './HeadPage.css'
@@ -16,7 +17,7 @@ export default function HeadPage() {
   const { signOut, isSigningOut } = useSignOut()
   const [accessAttempt, setAccessAttempt] = useState(0)
   const [access, setAccess] = useState<'loading' | 'allowed' | 'denied' | 'error'>('loading')
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { isPending: isSubmitting, tryBegin, finish } = usePendingAction()
   const [listRefresh, setListRefresh] = useState(0)
   const [emailError, setEmailError] = useState('')
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean; isInfo?: boolean } | null>(null)
@@ -32,6 +33,7 @@ export default function HeadPage() {
   async function handleAssign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (isSubmitting) return
+    const form = event.currentTarget
     setFeedback(null)
     setEmailError('')
     const email = emailRef.current?.value.trim() ?? ''
@@ -40,9 +42,10 @@ export default function HeadPage() {
       emailRef.current?.focus()
       return
     }
-    setIsSubmitting(true)
+    if (!tryBegin()) return
     try {
       const result = await assignStaff(email)
+      form.reset()
       setFeedback({ message: result.detail, isError: false, isInfo: result.detail === "Account already has Staff or Head access; no change made." })
       setListRefresh(value => value + 1)
     } catch (error) {
@@ -62,7 +65,7 @@ export default function HeadPage() {
         setFeedback({ message: 'Unable to assign Staff access. Please try again.', isError: true })
       }
     } finally {
-      setIsSubmitting(false)
+      finish()
     }
   }
 

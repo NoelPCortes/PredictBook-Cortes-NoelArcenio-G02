@@ -18,6 +18,8 @@ import FlightFormPage from './features/flights/FlightFormPage'
 import ForecastListPage from './features/calendar/ForecastListPage'
 import ForecastFormPage from './features/calendar/ForecastFormPage'
 import TrafficCalendarPage from './features/calendar/TrafficCalendarPage'
+import ErrorBoundary from './components/ErrorBoundary'
+import NotFoundPage from './components/NotFoundPage'
 
 function SessionBootstrap({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
@@ -65,11 +67,12 @@ export function AppRoutes() {
     <Route path="/staff/forecasts/:id/edit" element={<RoleRoute allowedRoles={['staff', 'head']}><ForecastFormPage /></RoleRoute>} />
     <Route path="/head" element={<RoleRoute allowedRoles={['head']}><HeadPage /></RoleRoute>} />
     <Route path="/profile" element={<SessionRoute isProtected><ProfilePage /></SessionRoute>} />
+    <Route path="*" element={<NotFoundPage />} />
   </Routes></SessionBootstrap>
 }
 
 export default function App() {
-  return <BrowserRouter><AppRoutes /></BrowserRouter>
+  return <ErrorBoundary><BrowserRouter><AppRoutes /></BrowserRouter></ErrorBoundary>
 }
 
 

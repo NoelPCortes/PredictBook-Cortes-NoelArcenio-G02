@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ApiError, fieldMessage } from '../../api/client'
 import AuthField from '../../components/AuthField'
+import { usePendingAction } from '../../components/usePendingAction'
 import { changePassword } from './api'
 
 const fields = [
@@ -14,7 +15,7 @@ type FieldName = typeof fields[number]['name']
 export default function PasswordSecurity() {
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
+  const { isPending: isSaving, tryBegin, finish } = usePendingAction()
   const formRef = useRef<HTMLFormElement>(null)
 
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -34,7 +35,7 @@ export default function PasswordSecurity() {
     setErrors(nextErrors)
     const invalid = fields.find(field => nextErrors[field.name])
     if (invalid) { form.querySelector<HTMLInputElement>(`[name="${invalid.name}"]`)?.focus(); return }
-    setIsSaving(true)
+    if (!tryBegin()) return
     try {
       const result = await changePassword(currentPassword, newPassword)
       form.reset()
@@ -46,7 +47,7 @@ export default function PasswordSecurity() {
       const firstInvalid = fields.find(field => backendErrors[field.name])
       if (firstInvalid) form.querySelector<HTMLInputElement>(`[name="${firstInvalid.name}"]`)?.focus()
       else setFeedback({ message: error instanceof ApiError ? fieldMessage(error.fields.detail) ?? fieldMessage(error.fields.non_field_errors) ?? 'Unable to update your password. Please try again.' : 'Unable to update your password. Please try again.', isError: true })
-    } finally { setIsSaving(false) }
+    } finally { finish() }
   }
 
   return <section className="profile-card profile-password-layout" id="password-security" tabIndex={-1} aria-labelledby="password-security-title">

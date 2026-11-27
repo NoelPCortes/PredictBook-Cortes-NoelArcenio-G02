@@ -116,10 +116,13 @@ it('clears the result message when the email is edited', async () => {
 it('disables assignment while a request is pending', async () => {
   vi.mocked(assignStaff).mockReturnValueOnce(new Promise(() => {}))
   await render()
-  await submit()
+  emailInput().value = 'staff@example.com'
+  const form = container.querySelector('form')!
+  await act(async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
   expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   expect(container.querySelector('form')?.getAttribute('aria-busy')).toBe('true')
-  await submit()
   expect(assignStaff).toHaveBeenCalledOnce()
 })
 
@@ -154,6 +157,7 @@ it('renders Staff and pending lists, then refreshes them after assignment', asyn
   expect(container.querySelector('[aria-label="Pending assignments list"]')?.textContent).toContain('head_user')
   await submit()
   expect(getStaffList).toHaveBeenCalledTimes(2)
+  expect(emailInput().value).toBe('')
 })
 it('shows empty states for both lists', async () => {
   await render()
@@ -191,6 +195,20 @@ it('shows backend list and removal errors without hiding them', async () => {
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Staff details"] button.record-danger')!.click())
   await act(async () => container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-danger')!.click())
   expect(container.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toBe('Only Staff access can be revoked here.')
+})
+
+it('disables removal actions and sends one request after repeated confirmation clicks', async () => {
+  vi.mocked(getStaffList).mockResolvedValue({ staff: [{ id: 2, username: 'staff_a', email: 'a@example.com' }], pending: [] })
+  vi.mocked(revokeStaff).mockReturnValueOnce(new Promise(() => {}))
+  await render()
+  await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Staff list"] button')!.click())
+  const remove = container.querySelector<HTMLButtonElement>('[aria-label="Staff details"] .record-danger')!
+  await act(async () => remove.click())
+  const confirm = container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-danger')!
+  await act(async () => { confirm.click(); confirm.click() })
+  expect(revokeStaff).toHaveBeenCalledOnce()
+  expect(remove.disabled).toBe(true)
+  expect(confirm.disabled).toBe(true)
 })
 
 it('shows selected Staff details, missing names, counts, side search and info feedback', async () => {

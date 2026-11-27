@@ -96,7 +96,8 @@ it.each([new ApiError(403, { detail: 'Permission denied.' }), new TypeError('Off
 it('prevents duplicate deletion while a request is pending', async () => {
   vi.mocked(deleteFlight).mockReturnValue(new Promise(() => {}))
   await render(); await askToDelete()
-  await act(async () => container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-danger')!.click())
+  const confirm = container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-danger')!
+  await act(async () => { confirm.click(); confirm.click() })
   expect(container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-ghost')?.disabled).toBe(true)
   expect(container.querySelector<HTMLButtonElement>('[role="alertdialog"] .record-danger')?.disabled).toBe(true)
   expect(deleteFlight).toHaveBeenCalledOnce()

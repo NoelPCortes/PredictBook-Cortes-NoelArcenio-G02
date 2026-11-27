@@ -57,6 +57,9 @@ The three account-related UIs were moved from existing `src/pages` files into th
 | Icon | Unused legacy helper | Retained legacy inline-SVG helper; changed Home and role pages do not render it |
 | TrafficCalendar | LandingPage | Static 30-day marketing preview; not the /calendar page |
 | HomeCalendar | HomePage | Wraps the shared real-data AirportCalendar; no booking fixture or named sample chip export |
+| NotFoundPage | AppRoutes | Catch-all page with a link to the signed-in role's landing page or Sign In |
+| ErrorBoundary | App | Generic render-failure screen with Reload page |
+| usePendingAction | Mutation forms and confirmations | Blocks repeated actions before React commits the disabled state |
 
 Landing currently writes its logo markup inline, using the same global logo styles; it does not import Brand. CrowdChip is a shared dot/text component with its own stylesheet.
 
@@ -137,8 +140,12 @@ excluded from requests. Both forms display backend errors beside the matching
 fields, focus the first invalid input, and display success/general error messages.
 Profile saves update memory; reload obtains persisted values from the backend.
 Sidebar section links move focus and indicate the selected section. Sign Out
-remains here, posts the refresh token to the existing blacklist endpoint and
-clears local tokens/session even when the request fails. The top bar no longer
+stays at the bottom-left of the sticky navy sidebar. The Profile Information and
+Password & Security links stay visible while an IntersectionObserver tracks the
+active section. Clicks focus and scroll to the section, respecting reduced motion.
+On small screens the sidebar becomes a compact, full-width sticky panel. Sign Out
+posts the refresh token to the blacklist endpoint and clears local tokens even on
+failure. Sign In shows the outcome. The top bar no longer
 has Sign out. Its profile link uses UserCircleIcon inside a light circular
 badge, username, My account, {username} as its accessible name, a current-page
 underline and visible white focus ring; role navigation links are unchanged.
@@ -212,9 +219,16 @@ now defined in the backend calculation service.
 The forecast table uses live seat numbers, their percentage, the flight count,
 and a View flights link to /staff/flights?airport=<id>&date=<date>. The Flights
 page reads those query parameters, requests the same backend filter and shows a
-Clear filter action. Source is Calculated automatically or Staff entry.
-Calculated rows have no Edit/Delete buttons, and direct edit routes with
-can_edit=false withhold the form. The backend also rejects those writes.
+Clear filter action. The airport page has a secondary Back to airports button
+and a Show flights toggle on each forecast row. The toggle opens paginated
+flights with route, direction, Manila timestamps and booked seats. Source is
+Calculated automatically or Staff entry. Edit appears on every Staff/Head row,+and Delete appears on manual rows with confirmation. Editing a calculated
+forecast saves a manual entry. Staff edit routes show a specific not-found
+message and list link if the requested record is missing.
+
+Mutation forms and delete confirmations disable the action during a request.
+`usePendingAction` also guards repeated events before the disabled state is
+rendered. Successful saves navigate or reset the form.
 
 StaffDashboard keeps its existing authorization probe and loads the real summary
 and airport choices through its API/shared lookup modules. The backend chooses
@@ -241,18 +255,19 @@ prove viewport-perfect rendering.
 
 ## Blended forecast explanation and recommendations
 
-TrafficCalendarPage supplies optional renderDetails/renderBefore callbacks to
+TrafficCalendarPage supplies optional `renderDetails` and `renderSelection` callbacks to
 AirportCalendar. CalendarSelection passes airport, date, optional booking destination, stored
 forecast and onSelectDate; the shared component never imports a feature module. DateBreakdown
 and RecommendedDates live in the existing calendar feature; its api.ts and
 types.ts define their calls/contracts. Home supplies neither slot, keeping its
-preview free of explanations and recommendations. Home now adds its separate
-route-search state and calendar highlighting options.
+preview free of explanations and recommendations. The recommendation request
+supplies the status beneath the selected date and the alternatives beside it.
+Home has separate route-search state and calendar highlighting options.
 
 DateBreakdown renders the backend sentences and a flight/history/combined table,
 plus history dates, with info-circleIcon. Manual levels stay visible with the
 calculated blend identified separately. RecommendedDates renders bulbIcon, up to
-three Low crowd cards with score/open seats, up to two actual departing flight
+three Low or Medium crowd cards with score/open seats, up to two actual departing flight
 previews, backend reasons and a positive difference when available. A card
 uses a native button to select its date, reloading all relevant requests. Both
 sections use keyed resources with loading/error/retry and stale-response protection.
@@ -320,16 +335,16 @@ flights to From/To departures, and passes destination to recommendations. Airpor
 changes clear it; the Booking chip and picker Clear restore normal mode. Airline
 filters only flights. The list requests four per page with See more/count/loading,
 resetting on airport, airline, booking or date changes. Without booking it shows
-UTC departures and arrivals. Grouping remains UTC for forecasts, calendar lists,
-route dates and recommendations; timestamp display and optional search filters
-use Asia/Manila. The UI labels both zones explicitly. Month navigation selects
+UTC departures and arrivals. Forecasts, calendar flight lists, and route
+highlights use UTC dates. Recommendations, timestamp display, and optional search
+filters use Asia/Manila. The UI labels both zones. Month navigation selects
 UTC today in its month, otherwise day one.
 
-RecommendedDates now shows only qualifying Low dates, route-aware when a booking
-is selected, with up to two real departing flight previews and backend reasons.
-No lower-than-selected requirement remains. Manual missing scores may use 2025
-history read-only; no history score excludes the candidate. Cards still select
-the date and refresh the panel. DateBreakdown remains after the flight list.
+RecommendedDates shows qualifying Low and Medium dates with text labels, up to
+two real departing flight previews, and backend reasons. The selected-date panel
+shows the backend's full, departed, or no-flights explanation when applicable.
+Empty results can show the last scheduled departure date. Cards select the date
+and refresh the panel. DateBreakdown remains after the flight list.
 Neither section is rendered on Home.
 
 StaffDashboard uses CrowdChart's seven Sun-to-Sat range buttons from the summary's

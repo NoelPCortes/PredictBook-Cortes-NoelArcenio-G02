@@ -7,6 +7,7 @@ import { AppRoutes } from '../src/App'
 import { clearSession, setProfile } from '../src/api/authState'
 import { readTokens, writeTokens } from '../src/api/authStorage'
 import { ApiError, apiRequest } from '../src/api/client'
+import ErrorBoundary from '../src/components/ErrorBoundary'
 import { signup } from '../src/features/signup/api'
 import { logout } from '../src/features/homepage/api'
 
@@ -84,6 +85,35 @@ function validSignup() {
   input('confirmPassword', 'Test-flow-password-927!')
 }
 
+it('shows a Sign in link on an unknown signed-out URL', async () => {
+  await render('/unknown-page')
+  expect(container.querySelector('h1')?.textContent).toBe('Page not found')
+  expect(container.querySelector('main a')?.getAttribute('href')).toBe('/signin')
+})
+
+it.each([['traveler', '/home'], ['staff', '/staff/dashboard'], ['head', '/head']])(
+  'links unknown URLs back to the %s landing page', async (role, path) => {
+    writeTokens(tokens)
+    fetchMock.mockResolvedValueOnce(response({ ...profile, role }))
+    await render('/unknown-page')
+    expect(container.querySelector('h1')?.textContent).toBe('Page not found')
+    expect(container.querySelector('main a')?.getAttribute('href')).toBe(path)
+  },
+)
+
+it('shows a reload action and hides exception details after a render error', async () => {
+  function FailingComponent(): never { throw new Error('Private render diagnostics') }
+  const reactLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await act(async () => root.render(<ErrorBoundary><FailingComponent /></ErrorBoundary>))
+    expect(container.querySelector('h1')?.textContent).toBe('Something went wrong')
+    expect(container.querySelector('button')?.textContent).toBe('Reload page')
+    expect(container.textContent).not.toContain('Private render diagnostics')
+  } finally {
+    reactLog.mockRestore()
+  }
+})
+
 describe('connected account flows', () => {
   it('submits only allowed signup fields and navigates to sign in', async () => {
     fetchMock.mockResolvedValueOnce(response(profile, 201))
@@ -96,6 +126,22 @@ describe('connected account flows', () => {
     expect(container.querySelector('.auth-success[role="status"]')?.textContent).toBe('Account created. Please sign in.')
     expect(container.querySelector('.auth-success img')?.getAttribute('src')).toContain('successIcon.png')
     expect(readTokens()).toBeNull()
+  })
+
+  it.each(['/signup', '/signin'])('ignores repeated submits in the same render on %s', async path => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {}))
+    await render(path)
+    if (path === '/signup') validSignup()
+    else {
+      input('username', profile.username)
+      input('password', 'Test-flow-password-927!')
+    }
+    const form = container.querySelector('form')!
+    await act(async () => {
+      for (let attempt = 0; attempt < 2; attempt += 1) form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true)
   })
 
   it.each(['username', 'password'])('dismisses signup success when the signin %s is edited', async name => {
@@ -201,6 +247,7 @@ describe('connected account flows', () => {
     expect(JSON.parse(logoutCall[1]!.body as string)).toEqual({ refresh: tokens.refresh })
     expect(readTokens()).toBeNull()
     expect(container.querySelector('h1')?.textContent).toBe('Welcome back')
+    expect(container.querySelector('.auth-success')?.textContent).toBe('Signed out.')
   })
 
   it('redirects signed-out Home visitors to sign in without requesting protected data', async () => {
@@ -224,6 +271,7 @@ describe('connected account flows', () => {
     await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Sign Out')!.click())
     expect(readTokens()).toBeNull()
     expect(container.querySelector('h1')?.textContent).toBe('Welcome back')
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('Signed out on this device. The server could not end the session.')
   })
 
   it('keeps landing public', async () => {
@@ -296,6 +344,7 @@ describe('role redirects and access', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('.profile-sidebar button')!.click())
     expect(readTokens()).toBeNull()
     expect(currentPath()).toBe('/signin')
+    expect(container.querySelector('.auth-success')?.textContent).toBe('Signed out.')
     const request = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/logout/'))!
     expect(JSON.parse(request[1]!.body as string)).toEqual({ refresh: tokens.refresh })
   })

@@ -54,8 +54,8 @@ Uses a **custom Django user model**. This must be set up before the first migrat
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | id | auto number | yes | Primary key |
-| username | CharField (150) | yes | Unique |
-| email | EmailField (254) | yes | Unique |
+| username | CharField (150) | yes | Unique, including case variants |
+| email | EmailField (254) | yes | Unique, including case variants |
 | password | hashed text | yes | Stored only as a Django hash. Never plain text. Never returned by the API. |
 | role | CharField (8), choice: `traveler`, `staff`, `head` | yes | Defaults to `traveler` |
 | promoted_by | link to `users` | no | The Head who promoted this user to Head. Empty for Travelers, for Staff, and for Heads created by a Django administrator |
@@ -77,7 +77,7 @@ Rules:
   - Removing a role never deletes the account.
   - Removing a Head does not change the Heads that person promoted.
 - **Who can remove a Head:** a Head can remove Head access only from the Heads they promoted, or from themselves. A Head cannot remove the Head who promoted them. A Head with an empty `promoted_by` (created by a Django administrator) can only be removed by a Django administrator or by that Head.
-- Username and email are both unique, so either can be used to sign in.
+- Username and email can both be used to sign in. PostgreSQL also enforces unique `Upper(username)` and `Upper(email)` values without changing stored casing.
 - Django also has built-in `is_staff` and `is_superuser` flags. `is_staff` means "can open the Django admin site." It is **not** the same as our Staff role. Use `role` for all app logic.
 - Phone number, home airport, and similar extras are not included.
 
@@ -104,7 +104,7 @@ Rules:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | id | auto number | yes | Primary key |
-| code | CharField (3 letters) | yes | Unique, for example `CEB` |
+| code | CharField (3 letters) | yes | Unique. Validator requires exactly three uppercase ASCII letters, for example `CEB` |
 | name | CharField (150) | yes | |
 | city | CharField (100) | yes | |
 | country | CharField (100) | yes | |
@@ -115,7 +115,7 @@ Rules:
 |---|---|---|---|
 | id | auto number | yes | Primary key |
 | name | CharField (100) | yes | Unique |
-| code | CharField (10) | yes | Unique short code |
+| code | CharField (10) | yes | Unique. Validator requires two to ten uppercase ASCII letters or digits |
 
 ### 3.5 `flights`
 
@@ -126,18 +126,19 @@ Flight details only. This is **not** a passenger ticket.
 | id | auto number | yes | Primary key |
 | created_by | link to `users` | yes | Set by the server to the signed-in creator; `on_delete=PROTECT` |
 | airline | link to `airlines` | yes | |
-| flight_number | CharField (10) | yes | |
+| flight_number | CharField (10) | yes | Validator requires two to ten uppercase ASCII letters or digits. The API trims and uppercases the input first |
 | origin | link to `airports` | yes | |
 | destination | link to `airports` | yes | |
 | departure_time | date and time | yes | Stored with time zone |
 | arrival_time | date and time | yes | Stored with time zone |
-| total_seats | PositiveIntegerField | yes | |
+| total_seats | PositiveIntegerField | yes | Validators require a whole number from 1 to 1000 |
 | available_seats | PositiveIntegerField | yes | |
 
 Rules:
 
 - Origin and destination must be different.
 - Arrival must be after departure.
+- The API rejects a past departure on create or when the departure changes. Staff and Heads may still make permitted edits to other fields of existing past flights.
 - Available seats must be between 0 and total seats.
 - The same airline, flight number, and departure time cannot appear twice.
 - Any signed-in user can read flights. Staff and Heads can create them. Staff can update or delete only their own flights; Heads can update or delete any flight. Travelers cannot write.
@@ -159,16 +160,16 @@ Expected airport crowd level for each airport and date. This table feeds the tra
 | airport | link to `airports` | yes | |
 | date | date | yes | |
 | crowd_level | CharField (6), choice: `low`, `medium`, `high` | yes | Must always be set |
-| crowd_score | FloatField (null=True, blank=True) | no | Calculated rows: flight/history blend rounded to one decimal; optional supplied score for manual entries |
+| crowd_score | FloatField (null=True, blank=True) | no | Validator and database check allow null or a score from 0 to 100. Calculated scores use the flight/history blend rounded to one decimal |
 | calculated_at | date and time | yes | Server sets the current time on create and update; clients cannot send it |
 | data_source | CharField (100; null=True, blank=True) | no | `Calculated from 2026 flights and 2025 history` for automatic rows; legacy `Calculated from flights` is also calculated; `Staff entry` for blank API sources; `Sample data` identifies legacy removable fixtures. Other sources are manual |
 
 Rules:
 
 - One forecast per airport per date.
-- Any signed-in user can read forecasts. Staff and Heads can create manual entries. Staff can update or delete their own manual records; Heads can update or delete any manual record. Calculated rows are read-only, and Travelers cannot write.
+- Any signed-in user can read forecasts. Staff and Heads can create manual entries, edit any forecast, and delete manual forecasts. Travelers cannot write.
 - Requests containing `created_by` or `calculated_at` are rejected with field-level 400 messages.
-- Traveler responses omit creator information. Staff and Head responses include `created_by_username` and the server-computed `can_edit`. Other users' email addresses are never included.
+- Traveler responses omit creator information and write flags. Staff and Head responses include `created_by_username`, `can_edit`, and `can_delete`. Other users' email addresses are never included.
 - A blank data source is stored as `Staff entry`.
 - **The color is not stored.** The frontend picks it from `crowd_level` (see `../frontend/UI_STYLE_GUIDE.md`, traffic calendar).
 - Keep forecasts after their date passes. Comparing them with `historical_records` shows whether the 75% accuracy goal is met.
@@ -176,7 +177,8 @@ Rules:
 - No flights or zero total seats produces no calculated row. If a flight change leaves no seats for a pair, remove only its calculated row. Manual entries are preserved even with no flights.
 - Every source except exact `Calculated from 2026 flights and 2025 history`, legacy `Calculated from flights`, and `Sample data` is manual. Recalculation upgrades the legacy calculated label while preserving its creator. A manual airport/date entry always takes precedence and is never overwritten or deleted by automatic calculation.
 - A calculated row's required creator is the user who first triggers calculation, or the configured seed Staff user for management commands. Preserve that creator on later recalculations. Converting an old Sample data row establishes the current calculator as its calculated creator.
-- Calculated rows are read-only for every API role: PATCH and DELETE return 403. Clients cannot create the reserved calculated source. Staff/Head responses use `created_by_username=null`, `is_calculated=true`, and `can_edit=false`; the UI displays Calculated automatically. Traveler responses continue to omit creator fields.
+- Calculated rows can be patched by Staff and Heads. The server converts the row to `Staff entry`, updates `calculated_at`, and preserves its creator and airport/date pair. Attempts to change the pair or set a reserved calculated source return 400. Calculated rows return `is_calculated=true`, `created_by_username=null`, and `can_delete=false` to Staff and Heads. Deleting a calculated row returns 403.
+- Deleting a manual row recalculates its airport-date pair in the same transaction. A calculated row is restored when flights supply seat data for that pair.
 - Every forecast response includes live `flight_count`, `seats_total`, and `seats_booked`. These are response aggregates, not stored columns or new relationships. Two grouped flight queries serve the whole forecast list, guarded by a constant-query-count test. Pagination adds one COUNT query and limits the rows aggregated per response.
 - Constants in `traffic/calculation.py` are MEDIUM_THRESHOLD=50, HIGH_THRESHOLD=75, FLIGHT_WEIGHT=0.5, HISTORY_WEIGHT=0.5, HISTORY_DAY_OFFSETS=(371,364,357), RECOMMENDATION_WINDOW=7, and MAX_RECOMMENDATIONS=3. Flight/history reads are grouped or fetched in bulk; recalculation uses bulk writes.
 - Raw SQL flight/history changes do not trigger recalculation; run `python manage.py recalculate_forecasts` afterward. Flight create/update/delete and old/new pair recalculation share a transaction and explicit services, without signals. Lookups are locked to serialize calculations and manual writes.
@@ -198,6 +200,7 @@ Past daily totals per airport. The prediction logic uses these to calculate fore
 Rules:
 
 - One record per airport per date.
+- Database checks require nonnegative `total_flights`, `seats_total`, and `seats_booked`, and enforce `seats_booked <= seats_total`.
 - Totals only. No individual passenger or booking data.
 - Local invented 2025 history comes from `backend/database/sample_flights.sql` (3,650 rows, ten airports). Production source datasets remain **TBD**. The script replaces all historical rows and only seed-owned flights, preserving manual forecasts and other users' flights.
 

@@ -7,6 +7,7 @@ import RecordField from '../../components/RecordField'
 import { useRemoteResource } from '../../components/useRemoteResource'
 import { airportOptions, airlineOptions } from '../../components/lookupOptions'
 import DeleteConfirmation from '../../components/DeleteConfirmation'
+import { usePendingAction } from '../../components/usePendingAction'
 import { ApiError, fieldMessage } from '../../api/client'
 import { formatFlightTime } from '../../components/flightTime'
 import PageControls from '../../components/PageControls'
@@ -29,7 +30,7 @@ function FlightList() {
   const navigate = useNavigate()
   const [success, setSuccess] = useState(() => typeof location.state?.success === 'string' ? location.state.success as string : '')
   const [pendingDelete, setPendingDelete] = useState<Flight | null>(null)
-  const [isDeleting, setIsDeleting] = useState(false)
+  const { isPending: isDeleting, tryBegin, finish } = usePendingAction()
   const [deleteError, setDeleteError] = useState('')
   const [flights, setFlights] = useState<Records<Flight>>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -55,15 +56,15 @@ function FlightList() {
     setIsLoading(true); setError(''); setPage(1); setAttempt(value => value + 1)
   }
   async function confirmDelete() {
-    if (!pendingDelete || isDeleting) return
-    setIsDeleting(true); setDeleteError(''); setSuccess('')
+    if (!pendingDelete || !tryBegin()) return
+    setDeleteError(''); setSuccess('')
     try {
       await deleteFlight(pendingDelete.id)
       setFlights(previous => previous.filter(flight => flight.id !== pendingDelete.id))
       setPendingDelete(null); setSuccess('Flight deleted.')
     } catch (error) {
       setDeleteError(error instanceof ApiError ? fieldMessage(error.fields.detail) ?? 'Unable to delete the flight. Please try again.' : 'Unable to delete the flight. Please try again.')
-    } finally { setIsDeleting(false) }
+    } finally { finish() }
   }
   return <RecordLayout>
     <header className="record-heading"><h1 tabIndex={-1}>Flights</h1><Link className="record-button" to="/staff/flights/new">Add flight</Link></header>

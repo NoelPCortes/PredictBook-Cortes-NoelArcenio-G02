@@ -171,7 +171,8 @@ def client_for(user):
     return client
 
 
-def test_api_flight_create_update_and_delete_recalculates_old_and_new_pairs(scenario):
+def test_api_flight_create_update_and_delete_recalculates_old_and_new_pairs(scenario, monkeypatch):
+    monkeypatch.setattr("flights.serializers.now", lambda: datetime(2026, 11, 1, tzinfo=UTC))
     staff, airports, airline = scenario
     client = client_for(staff)
     response = client.post(
@@ -233,21 +234,18 @@ def test_deleting_a_flight_preserves_manual_forecast(scenario):
 
 def test_recalculation_failure_rolls_back_flight_change(scenario):
     flight = make_flight(scenario)
-    with (
-        patch(
-            "flights.services.recalculate_forecasts", side_effect=RuntimeError("Failed")
-        ),
-        pytest.raises(RuntimeError),
-    ):
-        client_for(scenario[0]).patch(
+    with patch("flights.services.recalculate_forecasts", side_effect=RuntimeError("Failed")):
+        response = client_for(scenario[0]).patch(
             f"/api/flights/{flight.pk}/", {"available_seats": 0}, format="json"
         )
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Something went wrong."}
     flight.refresh_from_db()
     assert flight.available_seats == 50
 
 
 @pytest.mark.parametrize("role", ["staff", "head"])
-def test_calculated_rows_are_read_only_even_for_heads(scenario, role):
+def test_calculated_rows_are_editable_but_not_deletable(scenario, role):
     make_flight(scenario)
     recalculate_forecasts(scenario[0])
     actor = (
@@ -260,7 +258,8 @@ def test_calculated_rows_are_read_only_even_for_heads(scenario, role):
     assert all(
         row["is_calculated"]
         and row["created_by_username"] is None
-        and row["can_edit"] is False
+        and row["can_edit"] is True
+        and row["can_delete"] is False
         for row in rows
     )
     assert all(
@@ -270,8 +269,8 @@ def test_calculated_rows_are_read_only_even_for_heads(scenario, role):
         for row in rows
     )
     path = f"/api/traffic/forecasts/{rows[0]['id']}/"
-    assert client.patch(path, {"crowd_level": "high"}, format="json").status_code == 403
     assert client.delete(path).status_code == 403
+    assert client.patch(path, {"crowd_level": "high"}, format="json").status_code == 200
     assert (
         client.post(
             "/api/traffic/forecasts/",

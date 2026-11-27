@@ -88,14 +88,18 @@ def test_staff_and_head_create_with_server_fields(users, payload, role):
 
 
 @pytest.mark.parametrize("method", ["patch", "delete"])
-def test_staff_cannot_change_another_staff_forecast(users, forecast, method):
+def test_staff_can_change_another_staffs_manual_forecast(users, forecast, method):
     other = User.objects.create(username="other", email="other@example.com", role="staff")
     client = client_for(other)
-    assert client.get(BASE).json()["results"][0]["can_edit"] is False
+    assert client.get(BASE).json()["results"][0]["can_edit"] is True
     response = getattr(client, method)(f"{BASE}{forecast.pk}/", {"crowd_level": "high"}, format="json")
-    assert response.status_code == 403
-    forecast.refresh_from_db()
-    assert forecast.crowd_level == "low"
+    if method == "patch":
+        assert response.status_code == 200
+        forecast.refresh_from_db()
+        assert forecast.crowd_level == "high"
+    else:
+        assert response.status_code == 204
+        assert not CrowdForecast.objects.filter(pk=forecast.pk).exists()
 
 
 @pytest.mark.parametrize("role", ["staff", "head"])
@@ -133,9 +137,9 @@ def test_blank_sources_become_staff_entry(users, forecast, payload, source, meth
 
 @pytest.mark.parametrize("level", ["low", "medium", "high"])
 def test_valid_levels_and_optional_score_have_no_extra_thresholds(users, payload, level):
-    response = client_for(users["staff"]).post(BASE, {**payload, "crowd_level": level, "crowd_score": -1.5}, format="json")
+    response = client_for(users["staff"]).post(BASE, {**payload, "crowd_level": level, "crowd_score": 25}, format="json")
     assert response.status_code == 201
-    assert response.json()["crowd_score"] == -1.5
+    assert response.json()["crowd_score"] == 25
 
 
 @pytest.mark.parametrize("method", ["post", "patch"])

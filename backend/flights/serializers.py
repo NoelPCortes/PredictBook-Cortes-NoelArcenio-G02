@@ -1,9 +1,20 @@
+from datetime import date
+
+from django.utils.timezone import now
 from rest_framework import serializers
 
 from accounts.models import User
 from accounts.serializers import StrictFieldsMixin
 
-from .models import Airline, Airport, Flight
+from .models import (
+    FLIGHT_NUMBER_ERROR,
+    FLIGHT_NUMBER_VALIDATOR,
+    TOTAL_SEATS_ERROR,
+    TOTAL_SEATS_VALIDATORS,
+    Airline,
+    Airport,
+    Flight,
+)
 from .permissions import can_edit_record
 
 
@@ -20,7 +31,20 @@ class AirlineSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "code")
 
 
+class FlightNumberField(serializers.CharField):
+    def to_internal_value(self, data):
+        return super().to_internal_value(data).upper()
+
+
 class FlightSerializer(StrictFieldsMixin, serializers.ModelSerializer):
+    flight_number = FlightNumberField(
+        validators=[FLIGHT_NUMBER_VALIDATOR],
+        error_messages={"blank": FLIGHT_NUMBER_ERROR, "invalid": FLIGHT_NUMBER_ERROR},
+    )
+    total_seats = serializers.IntegerField(
+        validators=TOTAL_SEATS_VALIDATORS,
+        error_messages={"invalid": TOTAL_SEATS_ERROR},
+    )
     airline_name = serializers.CharField(source="airline.name", read_only=True)
     airline_code = serializers.CharField(source="airline.code", read_only=True)
     origin_code = serializers.CharField(source="origin.code", read_only=True)
@@ -77,6 +101,11 @@ class FlightSerializer(StrictFieldsMixin, serializers.ModelSerializer):
             else "arriving"
         )
 
+    def departure_error(self, departure):
+        if departure is None or (self.instance and departure == self.instance.departure_time):
+            return None
+        return "Departure cannot be in the past." if departure < now() else None
+
     def validate(self, attrs):
         current = self.instance
 
@@ -84,6 +113,12 @@ class FlightSerializer(StrictFieldsMixin, serializers.ModelSerializer):
             return attrs[name] if name in attrs else getattr(current, name, None)
 
         errors = {}
+        departure_error = self.departure_error(attrs.get("departure_time"))
+        if departure_error:
+            errors["departure_time"] = [departure_error]
+        for field in ("departure_time", "arrival_time"):
+            if field in attrs and attrs[field].date() == date.max:
+                errors[field] = ["Enter a valid date and time."]
         if value("origin") == value("destination"):
             errors["destination"] = ["Origin and destination must be different."]
         if value("arrival_time") <= value("departure_time"):
@@ -108,9 +143,17 @@ class FlightSerializer(StrictFieldsMixin, serializers.ModelSerializer):
         return attrs
 
 
+class FlightCalendarDateField(serializers.DateField):
+    def to_internal_value(self, value):
+        parsed = super().to_internal_value(value)
+        if parsed in (date.min, date.max):
+            raise serializers.ValidationError("Enter a valid date.")
+        return parsed
+
+
 class FlightFilterSerializer(serializers.Serializer):
-    departure_date = serializers.DateField(required=False, input_formats=("%Y-%m-%d",))
-    arrival_date = serializers.DateField(required=False, input_formats=("%Y-%m-%d",))
+    departure_date = FlightCalendarDateField(required=False, input_formats=("%Y-%m-%d",))
+    arrival_date = FlightCalendarDateField(required=False, input_formats=("%Y-%m-%d",))
     departure_hour_from = serializers.RegexField(r"^(?:[0-9]|1[0-9]|2[0-3])$", required=False)
     departure_hour_to = serializers.RegexField(r"^(?:[0-9]|1[0-9]|2[0-3])$", required=False)
     arrival_hour_from = serializers.RegexField(r"^(?:[0-9]|1[0-9]|2[0-3])$", required=False)
@@ -129,7 +172,7 @@ class FlightFilterSerializer(serializers.Serializer):
     origin = serializers.PrimaryKeyRelatedField(
         queryset=Airport.objects.all(), required=False
     )
-    date = serializers.DateField(required=False, input_formats=("%Y-%m-%d",))
+    date = FlightCalendarDateField(required=False, input_formats=("%Y-%m-%d",))
     mine = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
@@ -152,10 +195,11 @@ class RouteDatesFilterSerializer(serializers.Serializer):
     month = serializers.RegexField(r"^\d{4}-\d{2}$")
 
     def validate_month(self, value):
-        from datetime import date
-
         try:
-            return date.fromisoformat(f"{value}-01")
+            month = date.fromisoformat(f"{value}-01")
+            if month == date(date.max.year, 12, 1):
+                raise ValueError
+            return month
         except ValueError:
             raise serializers.ValidationError(
                 "Enter a valid month in YYYY-MM format."

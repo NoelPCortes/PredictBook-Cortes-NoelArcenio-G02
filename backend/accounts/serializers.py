@@ -1,8 +1,11 @@
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.validators import UniqueValidator
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -30,7 +33,17 @@ def check_password_validators(password: str, user: User, field: str) -> None:
         raise serializers.ValidationError({field: error.messages}) from error
 
 
-class ProfileSerializer(StrictFieldsMixin, serializers.ModelSerializer):
+class UniqueIdentitySerializer(StrictFieldsMixin, serializers.ModelSerializer):
+    def get_fields(self):
+        fields = super().get_fields()
+        for name in ("username", "email"):
+            for validator in fields[name].validators:
+                if isinstance(validator, UniqueValidator):
+                    validator.lookup = "iexact"
+        return fields
+
+
+class ProfileSerializer(UniqueIdentitySerializer):
     class Meta:
         model = User
         fields = ("id", "username", "email", "first_name", "last_name", "role")
@@ -40,7 +53,7 @@ class ProfileSerializer(StrictFieldsMixin, serializers.ModelSerializer):
         return services.update_profile(instance, validated_data)
 
 
-class SignupSerializer(StrictFieldsMixin, serializers.ModelSerializer):
+class SignupSerializer(UniqueIdentitySerializer):
     password = serializers.CharField(write_only=True, trim_whitespace=False)
 
     class Meta:
@@ -66,6 +79,15 @@ class SigninSerializer(StrictFieldsMixin, serializers.Serializer):
         return services.sign_in(**attrs, request=self.context["request"])
 
 
+class RefreshSerializer(TokenRefreshSerializer):
+    @transaction.atomic
+    def validate(self, attrs):
+        try:
+            return super().validate(attrs)
+        except User.DoesNotExist:
+            raise InvalidToken("Invalid or expired refresh token.") from None
+
+
 class LogoutSerializer(StrictFieldsMixin, serializers.Serializer):
     refresh = serializers.CharField(write_only=True)
 
@@ -79,6 +101,7 @@ class LogoutSerializer(StrictFieldsMixin, serializers.Serializer):
             raise PermissionDenied("Refresh token belongs to another account.")
         return token
 
+    @transaction.atomic
     def save(self):
         self.validated_data["refresh"].blacklist()
 

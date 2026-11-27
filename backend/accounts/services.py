@@ -2,15 +2,34 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.models import update_last_login
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import (
     AuthenticationFailed,
     PermissionDenied,
     ValidationError,
 )
+from rest_framework.generics import get_object_or_404
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import StaffAssignment, User
+
+IDENTITY_CONSTRAINT_FIELDS = {
+    "accounts_user_username_key": "username",
+    "accounts_username_case_insensitive_unique": "username",
+    "accounts_user_email_key": "email",
+    "accounts_email_case_insensitive_unique": "email",
+}
+IDENTITY_DUPLICATE_MESSAGES = {
+    "username": "A user with that username already exists.",
+    "email": "user with this email already exists.",
+}
+
+
+def duplicate_identity_error(error):
+    constraint = getattr(getattr(error.__cause__, "diag", None), "constraint_name", None)
+    field = IDENTITY_CONSTRAINT_FIELDS.get(constraint)
+    if field:
+        return ValidationError({field: [IDENTITY_DUPLICATE_MESSAGES[field]]})
+    return ValidationError("Username or email is already in use.")
 
 
 def register_user(validated_fields: dict) -> User:
@@ -29,9 +48,10 @@ def register_user(validated_fields: dict) -> User:
                 assignment.delete()
             return user
     except IntegrityError as error:
-        raise ValidationError("Username or email is already in use.") from error
+        raise duplicate_identity_error(error) from error
 
 
+@transaction.atomic
 def sign_in(identifier: str, password: str, request) -> dict:
     candidates = list(
         User.objects.filter(Q(username=identifier) | Q(email=identifier))[:2]
@@ -54,7 +74,7 @@ def update_profile(user: User, validated_fields: dict) -> User:
         with transaction.atomic():
             locked_user.save()
     except IntegrityError as error:
-        raise ValidationError("Username or email is already in use.") from error
+        raise duplicate_identity_error(error) from error
     return locked_user
 
 
