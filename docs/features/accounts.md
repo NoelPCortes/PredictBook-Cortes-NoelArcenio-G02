@@ -27,7 +27,8 @@ not a stored booking.
 `profile/` restores the current user's profile after reload. Home is
 Traveler-only; Staff and Heads have separate areas as described below. `/` stays
 public. Sign out calls `logout/` with the refresh token, then clears the local
-session even if the request fails. The Staff dashboard, Head assignment form,
+session even if the request fails. Sign In reports whether the server ended
+the session or sign-out completed only on this device. The Staff dashboard, Head assignment form,
 and own-profile/password page are implemented. Head management now lists Staff
 and pending assignments and supports assignment/revocation. Charts and
 promote/remove-Head management screens remain future work.
@@ -39,6 +40,11 @@ All paths below start with `/api/accounts/`. Requests and responses use JSON.
 `role`. A profile response is that object directly; sign-in nests it as `profile`.
 Passwords and password hashes are never returned. Protected endpoints require
 `Authorization: Bearer <access>`.
+
+Sign-up and profile updates reject duplicate usernames and emails regardless of
+case. The database enforces that rule for concurrent requests and keeps entered
+casing. The API uses JWT without session authentication or authentication cookies.
+Django admin retains its CSRF-protected session flow.
 
 | Path | Method | Request fields | Response fields | Access |
 |---|---|---|---|---|
@@ -101,6 +107,9 @@ again when an assignment is submitted. Home calendar/flight APIs independently e
 
 The top-bar username links to `/profile`. Its Navy sidebar links to the user's
 role landing page, Profile Information, Password & Security, and Sign Out.
+The sidebar stays visible while scrolling, with Sign Out at the bottom-left and
+the current section highlighted. Section clicks focus and scroll to the section,
+with reduced-motion support. The sidebar is compact and full-width on small screens.
 The reference layout is adapted without photo uploads or an edit pencil; the
 avatar uses only `UserCircleIcon`. Role is plain read-only text.
 
@@ -235,7 +244,7 @@ does not grant Django administrator access.
 
 ## Verification
 
-Run `python -m pytest` from `backend/`. Tests use PostgreSQL's separate test
+Run `python manage.py test` and `pytest` from `backend/`. Tests use PostgreSQL's separate test
 database and cover sign-up/password validation, assignment consumption and
 rollback, sign-in, token lifetimes/rotation/logout ownership, profile privacy,
 password changes, authorization, Head removal chains, Staff access, admin

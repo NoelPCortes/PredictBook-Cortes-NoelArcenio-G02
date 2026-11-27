@@ -7,7 +7,7 @@ Follow `PROMPTING_RULES.md` for how to handle requests, `frontend/UI_STYLE_GUIDE
 
 | Layer | Technology |
 |---|---|
-| Frontend | React + TypeScript (Vite), Vitest, ESLint with typescript-eslint, Prettier |
+| Frontend | React + TypeScript (Vite), Vitest, Oxlint, Prettier |
 | Backend | Python, Django, Django REST Framework, Ruff, pytest-django |
 | Database | PostgreSQL |
 | Authentication | Token-based (JWT), djangorestframework-simplejwt with token_blacklist |
@@ -122,6 +122,8 @@ active_users = users.filter(role="traveler")
 - When an authorized Head removes Head access (including their own), the acting Head chooses Staff or full revocation to Traveler. Clear promoted_by on the removed user. Fully revoking Staff access returns a user to Traveler.
 - Removing a Head must not affect the Heads they previously promoted.
 - Role changes must not delete user accounts.
+- Staff can update or delete their own flights. Heads can update or delete any flight. Travelers have read access.
+- Staff and Heads can edit any forecast and delete manual forecasts. Editing a calculated forecast converts it to `Staff entry` while preserving its airport, date, and creator. Deleting a manual forecast recalculates its airport/date pair in the same transaction.
 - Check the user's role on every protected page and endpoint, on the backend as well as the frontend.
 - Use the token flow for sign-in. Send passwords only when required for sign-up, sign-in, or authorized password changes. Never include passwords in unrelated requests, logs, or responses.
 - Use djangorestframework-simplejwt and its token_blacklist app for JWT authentication.

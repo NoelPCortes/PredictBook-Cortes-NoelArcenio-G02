@@ -9,6 +9,8 @@ from flights.models import Airline, Airport, Flight
 from traffic.calculation import CALCULATED_SOURCE, recalculate_forecasts
 from traffic.models import CrowdForecast
 
+FORECASTS_URL = "/api/traffic/forecasts/"
+
 
 class ForecastPermissionsTests(APITestCase):
     @classmethod
@@ -27,7 +29,41 @@ class ForecastPermissionsTests(APITestCase):
         )
 
     def setUp(self):
-        self.url = f"/api/traffic/forecasts/{self.forecast.pk}/"
+        self.url = f"{FORECASTS_URL}{self.forecast.pk}/"
+
+    def test_create_manual_forecast_valid(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.post(FORECASTS_URL, {
+            "airport": self.airport.pk, "date": "2030-01-02", "crowd_level": "medium", "crowd_score": 60,
+        })
+        self.assertEqual(response.status_code, 201)
+        forecast = CrowdForecast.objects.get(pk=response.data["id"])
+        self.assertEqual(forecast.created_by, self.staff)
+        self.assertEqual(forecast.data_source, "Staff entry")
+        self.assertEqual(forecast.crowd_score, 60)
+
+    def test_forecast_rejects_duplicate_airport_and_date(self):
+        self.client.force_authenticate(self.staff)
+        payload = {"airport": self.airport.pk, "date": "2030-01-01", "crowd_level": "high"}
+        for source in ("Staff entry", CALCULATED_SOURCE):
+            with self.subTest(source=source):
+                CrowdForecast.objects.filter(pk=self.forecast.pk).update(data_source=source)
+                response = self.client.post(FORECASTS_URL, payload)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.data["date"], ["A forecast already exists for this airport and date."])
+        self.assertEqual(CrowdForecast.objects.get(), self.forecast)
+
+    def test_forecast_list_and_create_require_login(self):
+        self.assertEqual(self.client.get(FORECASTS_URL).status_code, 401)
+        self.assertEqual(self.client.post(FORECASTS_URL, {}).status_code, 401)
+
+    def test_traveler_cannot_create_forecast(self):
+        self.client.force_authenticate(self.traveler)
+        response = self.client.post(FORECASTS_URL, {
+            "airport": self.airport.pk, "date": "2030-01-02", "crowd_level": "medium",
+        })
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(CrowdForecast.objects.count(), 1)
 
     def mark_calculated(self):
         CrowdForecast.objects.filter(pk=self.forecast.pk).update(data_source=CALCULATED_SOURCE)

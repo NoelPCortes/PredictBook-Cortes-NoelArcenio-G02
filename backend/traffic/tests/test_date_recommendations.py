@@ -171,3 +171,13 @@ class DateRecommendationsTests(APITestCase):
                 self.assertIn("date", response.data)
         self.client.force_authenticate(user=None)
         self.assertEqual(self.client.get(RECOMMENDATIONS).status_code, 401)
+
+    def test_recommendation_and_explanation_endpoints_require_login_and_reject_bad_parameters(self):
+        for url in (RECOMMENDATIONS, EXPLANATION):
+            with self.subTest(url=url):
+                self.client.force_authenticate(user=None)
+                self.assertEqual(self.client.get(url).status_code, 401)
+                self.client.force_authenticate(self.traveler)
+                response = self.client.get(url, {"airport": "bad", "date": "2026-13-01"})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(set(response.data), {"airport", "date"})
